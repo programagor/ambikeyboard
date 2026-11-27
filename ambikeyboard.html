@@ -134,6 +134,14 @@ body.hideSliders .vhbar{display:none;}
 .helpFoot{padding:9px 16px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px;background:var(--panel);}
 @media(max-width:580px){.helpTree{width:150px}.helpContent{padding:16px}.helpTop{padding:12px 14px}.helpTree .helpTopic{font-size:.68rem;padding:5px 6px}}
 .releaseList{margin:7px 0 10px 18px;color:#adb8ca;font-size:.78rem;line-height:1.55;}
+.newsShell{display:flex;flex-direction:column;max-height:calc(88vh - 32px);min-height:0;}
+.releaseScroll{overflow:auto;min-height:0;padding-right:8px;margin-right:-8px;}
+.releaseHistory{margin-top:14px;border-top:1px solid var(--line);padding-top:9px;}
+.releaseHistory>h3{font-size:.75rem;letter-spacing:.12em;text-transform:uppercase;color:#71809a;margin-bottom:7px;}
+.releaseEntry{border:1px solid #253043;border-radius:7px;margin:6px 0;background:#101620;}
+.releaseEntry summary{padding:8px 10px;cursor:pointer;color:#cbd7e8;font-size:.76rem;list-style-position:inside;}
+.releaseEntry summary span{color:#70809a;font-weight:normal;margin-left:6px;}
+.releaseEntry ul{margin:0 10px 10px 27px;color:#99a6b9;font-size:.72rem;line-height:1.5;}
 .pmGrid{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0;}
 .pmCard{width:152px;background:#0e131b;border:1px solid var(--line);border-radius:8px;padding:7px;display:flex;flex-direction:column;gap:5px;cursor:pointer;}
 .pmCard:hover{border-color:#3a465c;}
@@ -148,7 +156,7 @@ body.hideSliders .vhbar{display:none;}
 <body>
 
 <div id="toolbar">
-  <div id="brand"><span id="brandSvg"></span><div class="btxt"><b>ISOCTA</b><span>SCALELAB · V21.2</span></div></div>
+  <div id="brand"><span id="brandSvg"></span><div class="btxt"><b>ISOCTA</b><span>SCALELAB · V21.3</span></div></div>
   <span id="projName" class="dim" title="Current project — click to open Projects">unsaved</span>
   <input type="text" id="saveName" placeholder="project name…" spellcheck="false">
   <div class="tbsep"></div>
@@ -221,7 +229,7 @@ const rulerH = 30, HBH = 30, MINSPAN = 0.2, MINBODY = 36, TINYH = 14;
 const TOL_F = 2.5e-5;
 const EXACT_C = TOL_F*1200;
 const NEAR_C = 1;
-const APP_VERSION='21.2';
+const APP_VERSION='21.3';
 const LS_WHATSNEW='isocta.scalelab.whatsnew';
 /* tabs → views → rows. `views` is a live alias of the ACTIVE tab's views;
    row/group refs resolve across ALL tabs. */
@@ -2264,17 +2272,43 @@ function openHelpModal(){
 }
 
 function openWhatsNewModal(){
-  openModal(`<h2>What's new in ScaleLab v${APP_VERSION}</h2>
-  <ul class="releaseList">
-    <li><b>Browsable Help</b> — Help is now a two-pane topic tree, with focused sections for each row type, row appearance/sound/linking, and all major Global Settings controls.</li>
-    <li><b>MIDI explained</b> — Help now covers why MPE uses one channel per note: pitch bend is channel-wide, so independent microtonal bends need independent channels.</li>
-    <li><b>Expanded row &amp; Help documentation</b> — Help explains harmonic ladders, 2-D harmonic clouds, chromatic equal divisions, explicit-ratio syntax, important presets, links, colour patterns, and custom sound.</li>
-    <li><b>Mouse-wheel and touchpad scrolling</b> — the playing stack now scrolls vertically with the wheel or a touchpad gesture, while pad dragging and key sliding remain unchanged.</li>
-    <li><b>Help</b> — a built-in quick guide now covers playing, views, expressions, spawn, assignment, and project sharing.</li>
-    <li><b>Toolbar toggle feedback</b> — Rows and Sliders remain visibly active when enabled.</li>
-  </ul>
-  <div class="mhelp" style="margin-left:18px">This note is shown once for each ScaleLab version.</div>
-  <div class="mbtns"><button class="accent" id="newsClose">Close</button></div>`);
+  const releases=[
+   ['20','MIDI & controller polish',['Added MIDI input assignment for triggering pads from external controllers.','Added MIDI output device selection and configurable monophonic channel.','Preserved assignments when row IDs are renamed.']],
+   ['19','Tabs, projects & sharing',['Added tabs containing independent stacks of views, with row/group references across tabs.','Added New/Save/Load, autosave, browser project thumbnails, JSON files, and compressed share URLs.']],
+   ['18','Multi-view workspace foundations',['Added demonstrator workspaces for tuning, overtones, pianos, and trumpet valve combinations.','Introduced the tab/view/row project hierarchy and cross-tab references.']],
+   ['17','Views and compact controls',['Added independently ranged frequency views and per-view rulers/sliders.','Added controls to collapse rulers/sliders and drag rows between stacked views.']],
+   ['16','Row & header geometry',['Made the row-header column resizable and allowed rows to shrink to one pixel.','Added collapsed-row restore controls and per-view ruler/FFT toggles.']],
+   ['15','Stacked frequency views',['Separated the canvas into views with independent frequency windows, rulers, range sliders, zoom, and octave buttons.','Kept a stable row/view geometry and per-view delete/drop targets.']],
+   ['14','Musical expression refinement',['Split soft display/spawn simplification from explicit hard Simplify behavior.','Preferred ratios during spawning and composition while preserving cents when appropriate.','Changed harmonic fineness into true subdivisions around the fundamental.']],
+   ['13','Exact expression lineage',['Tracked the arithmetic expression of the last-played pad alongside its numeric frequency.','Spawned rows now inherit source expressions, including group references and rational multipliers.','Improved contrast on frequency cursors and FFT precision.']],
+   ['12','Cursors, halos & partial decay',['Added frequency and partial cursors with exact/near-match halo tiers.','Added per-partial decay and wrapped adjustable partial editors.','Added cents display precision and support for the ¢ input symbol.']],
+   ['11','Inharmonic synthesis',['Replaced periodic custom voices with arbitrary-ratio additive partials.','Added bell, stiff-rod, marimba, and waveform-style partial presets.','Improved sustained-note polyphony with a mouse and fixed cross-row label merging.']],
+   ['10','Sustain, MIDI output & spectrum',['Added Shift/latched sustain, MPE-style MIDI output, and a logarithmic FFT display.','Introduced the ISOCTA ScaleLab identity and consistent icon-based controls.']],
+   ['9','Cloud labels & interval recognition',['Improved harmonic-cloud label merging and vertical shaping controls.','Expanded cloud a_max and light/dark patterns, and added nearest-interval identification.']],
+   ['8','Structured ratios, groups & clouds',['Changed explicit entries to strict positional ratio/colour/label fields with escaping and comments.','Added row groups, grouped presets, and the first 2-D harmonic-cloud row type.']],
+   ['7','Binding and annotation fixes',['Fixed nearest-note labels, fixed-frequency Shift assignment, and fixed bindings using global sound.','Moved global synthesis into Settings and separated fixed and following key bindings.']],
+   ['6','Workspace and binding management',['Added JSON workspace export/import, a bindings manager, and fixed/follow binding modes.','Added microtonal nearest-note annotations plus Raga and 22-shruti demo rows.']],
+   ['5','Cents and explicit piano scenes',['Added grammatical cents support in f₀ and ratio expressions using 2^(c/1200).','Added cents-based Black/White key presets, one-pixel culling, and unified synthesis controls.']],
+   ['4','Merged-region correctness',['Fixed cross-row note highlights and duplicate-frequency region colouring.','Unified rainbow/custom-colour blending and introduced repeatable light/dark patterns.']],
+   ['3','Explicit key colour & piano patterns',['Added per-key colours and labels for explicit rows.','Added a 12-TET piano preset and chromatic light/dark patterns with reusable checkboxes.']],
+   ['2','Canvas, touch & Voronoi fixes',['Fixed canvas sizing/overlays, pointer rebuilds, highlighting, and off-canvas Voronoi participants.','Added seamless duplicate-frequency dissolve behavior and the Voronoi vertical-bias control.']],
+   ['1','Harmonic keyboard MVP',['Introduced rows, tuning expressions, shared-canvas Voronoi pads, Web Audio, multitouch sliding, spawning, row settings, bindings, and a 12-TET ruler.']]
+  ];
+  openModal(`<div class="newsShell"><h2>What's new in ScaleLab v${APP_VERSION}</h2>
+  <div class="releaseScroll">
+    <ul class="releaseList">
+      <li><b>Browsable Help</b> — Help is a responsive two-pane topic tree with focused Row Settings and Global Settings sections.</li>
+      <li><b>MIDI explained</b> — Help explains why channel-per-note MPE output is needed for independent microtonal pitch bends.</li>
+      <li><b>Expanded row documentation</b> — Harmonic ladders, 2-D clouds, chromatic rows, explicit-ratio syntax, presets, colour, sound, and linking are now covered.</li>
+      <li><b>Mouse-wheel and touchpad scrolling</b> — the playing stack scrolls vertically without changing touchscreen pad sliding.</li>
+      <li><b>Toolbar feedback</b> — Rows and Sliders show their enabled state.</li>
+    </ul>
+    <div class="mhelp" style="margin-left:18px">This latest release note is shown once for each ScaleLab version.</div>
+    <section class="releaseHistory"><h3>Earlier versions</h3>
+      ${releases.map(([v,name,items])=>`<details class="releaseEntry"><summary>v${v} <span>${name}</span></summary><ul>${items.map(x=>`<li>${x}</li>`).join('')}</ul></details>`).join('')}
+    </section>
+  </div>
+  <div class="mbtns"><button class="accent" id="newsClose">Close</button></div></div>`);
   document.getElementById('newsClose').onclick=closeModal;
 }
 
@@ -2760,7 +2794,7 @@ function openGlobalModal(){
     <span class="mhelp" style="margin:0" id="mWsMsg"></span></div>
   <div class="frow"><textarea id="mWs" rows="4" style="flex:1" spellcheck="false" placeholder="raw workspace JSON — Projects (toolbar) also: files, browser storage, gzip share links"></textarea></div>
   <div class="mbtns"><button id="mCancel">Close</button><button class="accent" id="mSave">Save</button></div>
-  <div class="aboutBox">ISOCTA · APPLIED ACOUSTICS DIVISION · SCALELAB v21<br>© ISOCTA. FOR INTERNAL USE.</div>`);
+  <div class="aboutBox">ISOCTA · APPLIED ACOUSTICS DIVISION · SCALELAB v${APP_VERSION}<br>© ISOCTA. FOR INTERNAL USE.</div>`);
   const $=id=>document.getElementById(id);
   $('mGWave').onchange=e=>{ synth.wave=e.target.value;
     $('mGProw').style.display=synth.wave==='custom'?'flex':'none';
