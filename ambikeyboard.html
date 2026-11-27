@@ -113,11 +113,26 @@ body.hideSliders .vhbar{display:none;}
 .adsr-group input[type=range]::-moz-range-track{width:20px;height:44px;background:#1b2432;border-radius:4px;border:1px solid #2b3648;}
 .adsr-group input[type=range]::-moz-range-thumb{width:16px;height:12px;border-radius:3px;background:var(--accent);border:1px solid #ffc27a;}
 .aboutBox{margin-top:14px;padding-top:10px;border-top:1px solid #232c3c;font-size:.6rem;color:#4d5a70;letter-spacing:.14em;line-height:1.9;font-family:monospace;}
-.helpGrid{display:grid;gap:8px;margin:8px 0 12px;}
-.helpItem{display:grid;grid-template-columns:112px 1fr;gap:10px;padding:7px 0;border-bottom:1px solid #202938;font-size:.78rem;line-height:1.45;}
-.helpItem:last-child{border-bottom:none;}
-.helpItem b{color:#cfe2ff;font-size:.72rem;letter-spacing:.04em;}
-.helpItem span{color:#9aa8c2;}
+#modalBack.helpMode #modalBox{width:min(820px,96vw);padding:0;overflow:hidden;}
+.helpShell{display:flex;flex-direction:column;height:min(72vh,650px);min-height:320px;}
+.helpTop{padding:14px 18px 10px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.helpTop h2{margin:0;}
+.helpTop .credit{font-size:.65rem;color:#6f7f9c;font-family:monospace;}
+.helpLayout{display:flex;min-height:0;flex:1;}
+.helpTree{width:220px;flex:none;overflow:auto;padding:10px 8px;background:#0e131b;border-right:1px solid var(--line);}
+.helpGroup{margin:2px 0 8px;}
+.helpGroup>span{display:block;padding:3px 8px;color:#66758d;font-size:.58rem;letter-spacing:.16em;text-transform:uppercase;}
+.helpTopic{display:block;width:100%;text-align:left;padding:6px 9px;margin:1px 0;border:1px solid transparent;background:transparent;color:#9facbf;font-size:.75rem;border-radius:5px;}
+.helpTopic:hover{filter:none;background:#182130;color:#e5edf9;}
+.helpTopic.active{background:#203045;border-color:#3b536f;color:#fff;box-shadow:inset 3px 0 0 var(--accent2);}
+.helpContent{flex:1;min-width:0;overflow:auto;padding:20px 24px 28px;color:#adb8ca;font-size:.8rem;line-height:1.65;}
+.helpContent h3{font-size:1rem;color:#e9effa;margin-bottom:4px;}
+.helpContent h4{font-size:.78rem;color:#d8e4f7;margin:16px 0 4px;letter-spacing:.04em;}
+.helpContent p{margin:7px 0;}
+.helpContent ul{margin:7px 0 10px 18px;}
+.helpContent code{background:#0b1018;border:1px solid #263146;border-radius:4px;padding:1px 4px;color:#d9e8ff;font-size:.92em;}
+.helpFoot{padding:9px 16px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px;background:var(--panel);}
+@media(max-width:580px){.helpTree{width:150px}.helpContent{padding:16px}.helpTop{padding:12px 14px}.helpTree .helpTopic{font-size:.68rem;padding:5px 6px}}
 .releaseList{margin:7px 0 10px 18px;color:#adb8ca;font-size:.78rem;line-height:1.55;}
 .pmGrid{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0;}
 .pmCard{width:152px;background:#0e131b;border:1px solid var(--line);border-radius:8px;padding:7px;display:flex;flex-direction:column;gap:5px;cursor:pointer;}
@@ -133,7 +148,7 @@ body.hideSliders .vhbar{display:none;}
 <body>
 
 <div id="toolbar">
-  <div id="brand"><span id="brandSvg"></span><div class="btxt"><b>ISOCTA</b><span>SCALELAB · V21.1</span></div></div>
+  <div id="brand"><span id="brandSvg"></span><div class="btxt"><b>ISOCTA</b><span>SCALELAB · V21.2</span></div></div>
   <span id="projName" class="dim" title="Current project — click to open Projects">unsaved</span>
   <input type="text" id="saveName" placeholder="project name…" spellcheck="false">
   <div class="tbsep"></div>
@@ -206,7 +221,7 @@ const rulerH = 30, HBH = 30, MINSPAN = 0.2, MINBODY = 36, TINYH = 14;
 const TOL_F = 2.5e-5;
 const EXACT_C = TOL_F*1200;
 const NEAR_C = 1;
-const APP_VERSION='21.1';
+const APP_VERSION='21.2';
 const LS_WHATSNEW='isocta.scalelab.whatsnew';
 /* tabs → views → rows. `views` is a live alias of the ACTIVE tab's views;
    row/group refs resolve across ALL tabs. */
@@ -2201,38 +2216,59 @@ vthumb.addEventListener('pointerdown',dragWindow(e=>{
 
 /* ================= modals ================= */
 const modalBack=document.getElementById('modalBack'), modalBody=document.getElementById('modalBody');
-function openModal(html){ modalBody.innerHTML=html; modalBack.classList.add('open'); }
-function closeModal(){ modalBack.classList.remove('open'); }
+function openModal(html,mode=''){ modalBody.innerHTML=html; modalBack.classList.toggle('helpMode',mode==='help'); modalBack.classList.add('open'); }
+function closeModal(){ modalBack.classList.remove('open','helpMode'); }
 modalBack.addEventListener('pointerdown',e=>{ if(e.target===modalBack) closeModal(); });
 
 function openHelpModal(){
-  openModal(`<h2>ScaleLab help</h2>
-  <div class="mhelp" style="margin:0 0 8px">Created by Jiří Programagor</div>
-  <div class="helpGrid">
-    <div class="helpItem"><b>Play</b><span>Click or touch a pad. Drag across the canvas to slide through nearby pads. Hold Shift or tap SUS to sustain voices. Shift also changes Assign into fixed-frequency mode.</span></div>
-    <div class="helpItem"><b>Rows &amp; views</b><span>Rows hold scales or harmonic series. Drag a row-header grip to resize it and the <b>⠿</b> handle to reorder or move it between views. Views have independent frequency ranges and vertical stacks.</span></div>
-    <div class="helpItem"><b>Scroll</b><span>Use the mouse wheel or touchpad over the playing area to move vertically. The right bar also scrolls; the bottom bar pans and zooms each view horizontally.</span></div>
-    <div class="helpItem"><b>Expressions</b><span>f₀ fields accept notes (C3, Bb4), arithmetic (3/2, 2^(3/12)), cents (500c), and row/group references. Ratios in Explicit rows use: ratio, colour, label, with one entry per line.</span></div>
-    <div class="helpItem"><b>Spawn</b><span>Arm Spawn, then press a pad. The new row tracks the source row/group. Hold Shift while pressing it to freeze an absolute pitch expression.</span></div>
-    <div class="helpItem"><b>Assign</b><span>Arm Assign, select a pad, then press a letter or a MIDI note. Normal assignment follows the pad's row; Shift plus a letter/MIDI note makes a fixed-frequency ruler binding.</span></div>
-    <div class="helpItem"><b>Row settings</b><span>Double-click a row label or click its gear button to edit its ID, label, group memberships, fundamental f₀, scale type, sound, and appearance. An empty label shows the row ID. Muting keeps the row playable and able to retune followers, but stops its own audio.</span></div>
-    <div class="helpItem"><b>Harmonic ladder</b><span>Produces integer multiples and divisions of f₀: ×1, ×2, ×3… and ÷2, ÷3… Fineness 1/n adds subdivisions while keeping the fundamental in the centre: at 1/2, ratios continue as ×1, ×3/2, ×2, ×5/2… and the matching subharmonic side. This is useful for overtone series and trumpet-style natural harmonics.</span></div>
-    <div class="helpItem"><b>Harmonic 2D cloud</b><span>Builds a two-dimensional harmonic lattice at f₀·a·2ᵇ, with octaves and high/low divisions spread across the row. Set <b>a max</b> to extend the lattice (up to 1024), <b>γ</b> to curve the vertical spacing, and enable subharmonics to mirror the overtone pattern below the centre. Turning subharmonics off lets the overtone arc fill the whole lane.</span></div>
-    <div class="helpItem"><b>Chromatic</b><span>Generates f₀·2^(k/steps) for each semitone offset k. Steps/octave defaults to 12-TET but can be set from 2 to 31; use 19 or 22 for nearby equal divisions, or 12 for a piano-like reference row. Tone 0 is the root, with positive and negative offsets around it.</span></div>
-    <div class="helpItem"><b>Explicit ratios</b><span>Defines one unitless scale interval per line: 5/4, 9/8, 386c/386¢, 2^(3/12), or a note-like text label in the third field. Format: <b>ratio, colour, label</b>; use an empty colour slot for label-only entries, as 1, , Sa. Presets include Black/White keys and Janko whole-tone layouts, Just major/minor and Pythagorean scales, Lydian and pentatonics, Raga Bhairav/Shree/Todi/Kafi/Bhairavi/Khamaj with sargam names, 22 named shrutis, historical temperaments, Slendro/Pelog approximations, and harmonic segments.</span></div>
-    <div class="helpItem"><b>Row colour &amp; sound</b><span>Colour mix blends rainbow colouring with a row or per-pad custom colour; light/dark patterns can be lengthened and have their own opacity. Custom sound adds wave selection and ADSR overrides, while custom partials allow arbitrary ratios, gains, and per-partial decay. Unset sound controls inherit the global synth.</span></div>
-    <div class="helpItem"><b>Links &amp; repeats</b><span>Row and group references make f₀ track the last played pad. Explicit scales repeat by an octave count set with Repeat every (oct); this can create multiple repeated copies across the visible range. Renaming a row also retargets references and bindings.</span></div>
-    <div class="helpItem"><b>Projects</b><span>New, Save, and Load manage browser projects. Share creates a compressed URL. Settings &gt; Workspace also exports and imports JSON files or text.</span></div>
-  </div>
-  <div class="mbtns"><button class="accent" id="helpWhats">What's new</button><button id="helpClose">Close</button></div>`);
+  const topics=[
+   ['Getting started','play','Play & sustain','<h3>Play &amp; sustain</h3><p>Click or touch a pad to sound it. Drag across the canvas to move the voice through adjacent pads; multitouch gives independent fingers and voices. Hold Shift, or tap <b>SUS</b>, to keep released notes alive.</p><p>The pad is determined by the shared Voronoi map, not only by its row. Identical frequencies can merge into one region, while exact-frequency highlights remain visible across rows.</p>'],
+   ['Getting started','navigation','Rows, views & scrolling','<h3>Rows, views &amp; scrolling</h3><p>Rows are scale lanes. Tabs contain independently scrollable stacks of views, and each view has its own horizontal frequency range, ruler, and bottom range control.</p><ul><li>Wheel or touchpad over the playing area: scroll vertically.</li><li>Right scrollbar: drag the visible stack position.</li><li>Bottom range bar: drag the range or handles to pan/zoom.</li><li>Row bottom edge: resize. Row left handle: reorder or move between views.</li><li>Collapsed-row run: use the restore button to expand the whole run.</li></ul>'],
+   ['Getting started','expressions','Pitch expressions','<h3>Pitch expressions</h3><p>An <b>f₀</b> expression may use notes, arithmetic, cents, row references, or group references: <code>C3*3/2</code>, <code>A4+150c</code>, <code>white/2</code>, or <code>keys</code>. A group resolves to the most recently played pad in any member row, including another tab.</p><p>Cents use 100¢ per equal-tempered semitone. The header and Spawn use the soft expression form to preserve musical ratios; the row editor’s Simplify button deliberately performs a stronger octave/note rewrite.</p>'],
+   ['Getting started','spawn','Spawn & assign','<h3>Spawn &amp; assign</h3><h4>Spawn</h4><p>Arm Spawn, then press a pad. The new row inherits the source expression plus the pad ratio. A normal spawn remains linked when the source uses a row/group reference; hold Shift for an absolute pitch expression.</p><h4>Assign</h4><p>Arm Assign, select a pad, then press a computer key or a MIDI note. Normal bindings follow the row as f₀ changes. Hold Shift to create a fixed-Hz binding and ruler pin instead. The Bindings manager can retarget, convert, or delete bindings.</p>'],
+   ['Getting started','projects','Projects & sharing','<h3>Projects &amp; sharing</h3><p><b>Save</b> stores named projects in this browser and thumbnails their current canvas. <b>Load</b> opens the project browser. <b>New</b> starts a small blank scene.</p><p><b>Share</b> compresses the workspace into a URL fragment. Settings also provides raw JSON export/import and the project browser supports files. The automatic session restore is separate from named saves.</p>'],
+   ['Row settings','roweditor','Overview','<h3>Row settings overview</h3><p>Open a row by double-clicking its label or pressing its gear button. Edit the ID, label, comma-separated group memberships, f₀ expression, scale type, mute state, colours, and per-row synthesis.</p><p>An empty label displays the row ID. A muted row is still playable and still updates its last frequency, so it can be a silent tuning/controller source for rows that reference it.</p>'],
+   ['Row settings','harmonic','Harmonic ladder','<h3>Harmonic ladder</h3><p>The ladder places integer multiples above f₀ and their reciprocal ratios below it: <code>×1, ×2, ×3…</code> and <code>÷2, ÷3…</code>.</p><h4>Fineness 1/n</h4><p>Fineness inserts subdivisions without creating an expanding hole around the root. For 1/2, the sequence is <code>×1, ×3/2, ×2, ×5/2…</code>, mirrored as <code>÷3/2, ÷2, ÷5/2…</code>. This is useful for overtone-series studies and for instrument/fingering demonstrations.</p>'],
+   ['Row settings','cloud','Harmonic 2D cloud','<h3>Harmonic 2D cloud</h3><p>The cloud lays out a true lattice at <code>f₀·a·2ᵇ</code>. Several points can have the same frequency at different vertical positions, so octave-related points form shaped, partially merged Voronoi regions.</p><ul><li><b>a max</b>: maximum harmonic component, up to 1024.</li><li><b>Y curve γ</b>: redistributes vertical spacing; smaller values spread fine divisions, larger values compress them.</li><li><b>Subharmonics</b>: mirrors <code>f₀·2ᵇ/a</code> below the centre. With it off, the overtone arc uses the full lane.</li></ul>'],
+   ['Row settings','chromatic','Chromatic','<h3>Chromatic equal divisions</h3><p>The row generates <code>f₀·2^(k/steps)</code>. Tone zero is f₀; surrounding pads are labelled by positive and negative step offsets.</p><p>Steps/octave ranges from 2 to 31. Use 12 for 12-TET, or 19/22 and similar divisions to study nonstandard equal temperaments. A chromatic row with a 12-step piano light/dark pattern makes a conventional keyboard reference.</p>'],
+   ['Row settings','explicit','Explicit ratios & presets','<h3>Explicit ratios</h3><p>Enter one interval per line: <code>ratio [, colour [, label]]</code>. Ratios are unitless multipliers of f₀. Examples are <code>5/4</code>, <code>9/8</code>, <code>2^(3/12)</code>, <code>386c</code>, and <code>386¢</code>. For a label without a custom colour, leave the colour field empty: <code>1, , Sa</code>.</p><h4>Useful presets</h4><ul><li>Piano and Janko: Black/White keys and whole-tone rows.</li><li>Just intonation: major, minor, Lydian, pentatonic, and Pythagorean.</li><li>Ragas with sargam names: Bhairav, Shree, Todi, Kafi, Bhairavi, and Khamaj.</li><li>22 named shrutis, quarter-comma meantone, Werckmeister III, Vallotti.</li><li>Slendro/Pelog approximations, Maqam Bayati, and harmonic segments.</li></ul><p><b>Repeat every (oct)</b> controls the octave period copied across the visible range. Lines beginning with # are comments; backslash escapes commas, backslashes, and newlines.</p>'],
+   ['Row settings','appearance','Colour & patterns','<h3>Colour &amp; light/dark patterns</h3><p>Base hue follows the frequency’s position in an octave. <b>Colour mix</b> blends from rainbow toward the row swatch; an explicit pad’s own colour replaces that endpoint when present.</p><p>The light/dark pattern has a selectable length, a strength/opacity control, and up to 64 clickable swatches. Tone index means the harmonic in a ladder/cloud, the step offset in a chromatic row, or the list position in an explicit row. This lets piano patterns, odd-harmonic patterns, and custom repeating layouts share the same mechanism.</p>'],
+   ['Row settings','links','Links & repetition','<h3>Links &amp; repetition</h3><p>Rows can reference another row ID or a group in f₀. The result is the referenced row’s/group’s last-played pitch, so muted controller rows can retune an entire instrument.</p><p>Group names are comma-separated memberships. Group references work across tabs. Renaming a row updates expressions and bindings; deleting a row substitutes its f₀ expression where possible. Explicit-ratio rows have a separate octave repeat control, so repeated scale copies need not be typed manually.</p>'],
+   ['Row settings','rowsound','Per-row sound','<h3>Per-row sound</h3><p>By default a row inherits the global synthesizer. Enabling Custom sound supplies a waveform and ADSR envelope for that row.</p><p>The custom-partial editor creates additive sine components at arbitrary ratios to f₀. Each partial has gain and an optional decay: ratios can be integer harmonics or irrational numbers for bell/rod-like spectra. Saw, square, triangle, bell, rod, and other presets provide starting points.</p>'],
+   ['Global settings','tuning','Tuning & synth','<h3>Tuning &amp; global synth</h3><h4>A4 reference</h4><p>A4 sets the absolute conversion for note names, 12-TET annotations, and frequency labels. Changing it retunes note-name expressions without changing ratio-only arithmetic.</p><h4>Default sound</h4><p>Wave, partials, volume, and ADSR provide the inherited instrument for rows without overrides. Attack/decay/release are seconds/ms controls; sustain is a percentage level. Custom partial ratios and decays are per-component, not forced to integer harmonics.</p>'],
+   ['Global settings','visual','Spectrum & guides','<h3>Spectrum &amp; guides</h3><p>The FFT is drawn behind the 12-TET ruler using the active view’s logarithmic frequency range. Larger FFT sizes give better low-frequency precision but update more slowly.</p><ul><li><b>Freq cursor:</b> a vertical line at every sounding fundamental.</li><li><b>Partials:</b> optional differently coloured lines for the actual sounding partials.</li><li><b>Halo:</b> shows nearby pad frequencies out to a cents radius, separately from exact matches.</li><li><b>Voronoi bias:</b> changes the importance of vertical vs horizontal distance when partitioning pads.</li><li><b>Cents digits:</b> controls display precision; entering c or ¢ works in fields.</li></ul>'],
+   ['Global settings','midiout','MIDI output','<h3>MIDI output</h3><p>MIDI pitch is nominally 12-TET, and pitch bend is a <em>channel-wide</em> controller. If two simultaneous notes use different microtonal bends, one shared channel would move both notes. MPE mode therefore allocates a fresh channel to each live note (channels 2–16), so every note can carry its own note number and bend.</p><p><b>Bend range</b> must match the receiving synth’s range. Larger ranges permit wider microtonal and glissando excursions, but reduce bend resolution. If the receiver has only conventional monophonic MIDI, use Monophonic mode and choose the hardware’s listening channel; notes are legato and bend is shared, as a last-resort approximation.</p>'],
+   ['Global settings','midiin','MIDI input & bindings','<h3>MIDI input &amp; bindings</h3><p>Choose an input and an incoming channel (or Omni). In Assign mode, select a pad and play a MIDI key to bind that note exactly like a computer letter. A normal binding follows the target row as it retunes; Shift makes it fixed frequency.</p><p>This supports controller workflows: bind a MIDI note to a muted root pad, reference that pad from another row, then bind a second register of notes to pads on the follower row. The first note silently retunes the follower, while the others perform on it.</p><p>MIDI input bindings and MIDI output targets are independent choices, so the same hardware can be used for input, output, or split roles on different channels.</p>'],
+   ['Global settings','other','Bindings & workspace','<h3>Bindings &amp; workspace</h3><p>The Bindings manager lists keyboard and MIDI bindings. Follow bindings store the target row and multiplier; fixed bindings store an absolute frequency and pin it to the ruler.</p><p>Workspace export/import carries settings, rows, tabs, views, bindings, and synth state. The Voronoi, spectrum, and interface settings are part of the workspace rather than the synthesis engine itself.</p>']
+  ];
+  const groups=[];
+  topics.forEach(t=>{ if(!groups.includes(t[0])) groups.push(t[0]); });
+  openModal(`<div class="helpShell">
+    <div class="helpTop"><div><h2>ScaleLab help</h2><span class="credit">Created by Jiří Programagor</span></div><span class="credit">v${APP_VERSION}</span></div>
+    <div class="helpLayout">
+      <nav class="helpTree">${groups.map(g=>`<div class="helpGroup"><span>${g}</span>${topics.filter(t=>t[0]===g).map(t=>`<button class="helpTopic" data-help="${t[1]}">${t[2]}</button>`).join('')}</div>`).join('')}</nav>
+      <article class="helpContent" id="helpContent"></article>
+    </div>
+    <div class="helpFoot"><button class="accent" id="helpWhats">What's new</button><button id="helpClose">Close</button></div>
+  </div>`,'help');
+  const show=id=>{
+    const topic=topics.find(t=>t[1]===id)||topics[0];
+    document.getElementById('helpContent').innerHTML=topic[3];
+    document.getElementById('helpContent').scrollTop=0;
+    modalBody.querySelectorAll('.helpTopic').forEach(b=>b.classList.toggle('active',b.dataset.help===topic[1]));
+  };
+  modalBody.querySelectorAll('.helpTopic').forEach(b=>b.onclick=()=>show(b.dataset.help));
   document.getElementById('helpClose').onclick=closeModal;
   document.getElementById('helpWhats').onclick=openWhatsNewModal;
+  show('play');
 }
 
 function openWhatsNewModal(){
   openModal(`<h2>What's new in ScaleLab v${APP_VERSION}</h2>
   <ul class="releaseList">
-    <li><b>Expanded row &amp; Help documentation</b> — Help now explains row settings, harmonic ladders, 2-D harmonic clouds, chromatic equal divisions, explicit-ratio syntax, important presets, links, colour patterns, and custom sound.</li>
+    <li><b>Browsable Help</b> — Help is now a two-pane topic tree, with focused sections for each row type, row appearance/sound/linking, and all major Global Settings controls.</li>
+    <li><b>MIDI explained</b> — Help now covers why MPE uses one channel per note: pitch bend is channel-wide, so independent microtonal bends need independent channels.</li>
+    <li><b>Expanded row &amp; Help documentation</b> — Help explains harmonic ladders, 2-D harmonic clouds, chromatic equal divisions, explicit-ratio syntax, important presets, links, colour patterns, and custom sound.</li>
     <li><b>Mouse-wheel and touchpad scrolling</b> — the playing stack now scrolls vertically with the wheel or a touchpad gesture, while pad dragging and key sliding remain unchanged.</li>
     <li><b>Help</b> — a built-in quick guide now covers playing, views, expressions, spawn, assignment, and project sharing.</li>
     <li><b>Toolbar toggle feedback</b> — Rows and Sliders remain visibly active when enabled.</li>
