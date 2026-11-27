@@ -1618,15 +1618,17 @@ function drawChordIntervals(v){
         const yTop=Math.min(a.y,b.y), yBottom=Math.max(a.y,b.y);
         const side=a.x+18+((lane++)%3)*8;
         const cy=(yTop+yBottom)/2;
+        const t=formatIntervalPair(a.f,b.f).short;
+        const box=placeLabel(side,cy-7,t);
+        const targetX=box.x+box.w/2;
+        const ctrlX=2*targetX-a.x;
         ctx.save();
         ctx.strokeStyle='rgba(255,255,255,.42)';
         ctx.lineWidth=1.15;
         ctx.beginPath();
         ctx.moveTo(a.x,yTop);
-        ctx.quadraticCurveTo(side,cy,a.x,yBottom);
+        ctx.quadraticCurveTo(ctrlX,cy,a.x,yBottom);
         ctx.stroke();
-        const t=formatIntervalPair(a.f,b.f).short;
-        const box=placeLabel(side,cy-7,t);
         ctx.fillStyle='rgba(10,12,20,.88)';
         ctx.fillRect(box.x,box.y,box.w,box.h);
         ctx.textAlign='center'; ctx.textBaseline='middle';
@@ -1639,15 +1641,17 @@ function drawChordIntervals(v){
       const yTop=Math.min(a.y,b.y)-18-laneStep-Math.min(22,Math.abs(span)*0.06);
       const peak=Math.max(v.rh+18,yTop);
       const cx=(a.x+b.x)/2;
+      const t=formatIntervalPair(a.f,b.f).short;
+      const box=placeLabel(cx,peak-15,t);
+      const targetY=box.y+box.h+2;
+      const ctrlY=2*(targetY-0.25*(a.y+b.y));
       ctx.save();
       ctx.strokeStyle='rgba(255,255,255,.42)';
       ctx.lineWidth=1.15;
       ctx.beginPath();
       ctx.moveTo(a.x,a.y);
-      ctx.quadraticCurveTo(cx,peak,b.x,b.y);
+      ctx.quadraticCurveTo(cx,ctrlY,b.x,b.y);
       ctx.stroke();
-      const t=formatIntervalPair(a.f,b.f).short;
-      const box=placeLabel(cx,peak-15,t);
       ctx.fillStyle='rgba(10,12,20,.88)';
       ctx.fillRect(box.x,box.y,box.w,box.h);
       ctx.textAlign='center';
@@ -1845,10 +1849,13 @@ function drawRulerStrip(v){
 }
 function drawRulerPins(v){
   for(const [k,b] of bindings){
-    if(b.fixed==null) continue;
-    const x=xToPxV(v,Math.log2(b.fixed));
-    if(x<8||x>v.W-8) continue;
-    drawRulerPin(v,x,bindLabel(k),'#ffd700',false);
+    const seq=(Array.isArray(b.seq)&&b.seq.length)?b.seq:[b];
+    for(const s of seq){
+      if(s.fixed==null) continue;
+      const x=xToPxV(v,Math.log2(s.fixed));
+      if(x<8||x>v.W-8) continue;
+      drawRulerPin(v,x,bindLabel(k),'#ffd700',false);
+    }
   }
   if(pendingPad&&pendingShift){
     const seq=pendingPad.seq||[{f:pendingPad.f}];
