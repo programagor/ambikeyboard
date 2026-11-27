@@ -133,7 +133,7 @@ body.hideSliders .vhbar{display:none;}
 <body>
 
 <div id="toolbar">
-  <div id="brand"><span id="brandSvg"></span><div class="btxt"><b>ISOCTA</b><span>SCALELAB · V21</span></div></div>
+  <div id="brand"><span id="brandSvg"></span><div class="btxt"><b>ISOCTA</b><span>SCALELAB · V21.1</span></div></div>
   <span id="projName" class="dim" title="Current project — click to open Projects">unsaved</span>
   <input type="text" id="saveName" placeholder="project name…" spellcheck="false">
   <div class="tbsep"></div>
@@ -206,7 +206,7 @@ const rulerH = 30, HBH = 30, MINSPAN = 0.2, MINBODY = 36, TINYH = 14;
 const TOL_F = 2.5e-5;
 const EXACT_C = TOL_F*1200;
 const NEAR_C = 1;
-const APP_VERSION='21';
+const APP_VERSION='21.1';
 const LS_WHATSNEW='isocta.scalelab.whatsnew';
 /* tabs → views → rows. `views` is a live alias of the ACTIVE tab's views;
    row/group refs resolve across ALL tabs. */
@@ -2215,6 +2215,13 @@ function openHelpModal(){
     <div class="helpItem"><b>Expressions</b><span>f₀ fields accept notes (C3, Bb4), arithmetic (3/2, 2^(3/12)), cents (500c), and row/group references. Ratios in Explicit rows use: ratio, colour, label, with one entry per line.</span></div>
     <div class="helpItem"><b>Spawn</b><span>Arm Spawn, then press a pad. The new row tracks the source row/group. Hold Shift while pressing it to freeze an absolute pitch expression.</span></div>
     <div class="helpItem"><b>Assign</b><span>Arm Assign, select a pad, then press a letter or a MIDI note. Normal assignment follows the pad's row; Shift plus a letter/MIDI note makes a fixed-frequency ruler binding.</span></div>
+    <div class="helpItem"><b>Row settings</b><span>Double-click a row label or click its gear button to edit its ID, label, group memberships, fundamental f₀, scale type, sound, and appearance. An empty label shows the row ID. Muting keeps the row playable and able to retune followers, but stops its own audio.</span></div>
+    <div class="helpItem"><b>Harmonic ladder</b><span>Produces integer multiples and divisions of f₀: ×1, ×2, ×3… and ÷2, ÷3… Fineness 1/n adds subdivisions while keeping the fundamental in the centre: at 1/2, ratios continue as ×1, ×3/2, ×2, ×5/2… and the matching subharmonic side. This is useful for overtone series and trumpet-style natural harmonics.</span></div>
+    <div class="helpItem"><b>Harmonic 2D cloud</b><span>Builds a two-dimensional harmonic lattice at f₀·a·2ᵇ, with octaves and high/low divisions spread across the row. Set <b>a max</b> to extend the lattice (up to 1024), <b>γ</b> to curve the vertical spacing, and enable subharmonics to mirror the overtone pattern below the centre. Turning subharmonics off lets the overtone arc fill the whole lane.</span></div>
+    <div class="helpItem"><b>Chromatic</b><span>Generates f₀·2^(k/steps) for each semitone offset k. Steps/octave defaults to 12-TET but can be set from 2 to 31; use 19 or 22 for nearby equal divisions, or 12 for a piano-like reference row. Tone 0 is the root, with positive and negative offsets around it.</span></div>
+    <div class="helpItem"><b>Explicit ratios</b><span>Defines one unitless scale interval per line: 5/4, 9/8, 386c/386¢, 2^(3/12), or a note-like text label in the third field. Format: <b>ratio, colour, label</b>; use an empty colour slot for label-only entries, as 1, , Sa. Presets include Black/White keys and Janko whole-tone layouts, Just major/minor and Pythagorean scales, Lydian and pentatonics, Raga Bhairav/Shree/Todi/Kafi/Bhairavi/Khamaj with sargam names, 22 named shrutis, historical temperaments, Slendro/Pelog approximations, and harmonic segments.</span></div>
+    <div class="helpItem"><b>Row colour &amp; sound</b><span>Colour mix blends rainbow colouring with a row or per-pad custom colour; light/dark patterns can be lengthened and have their own opacity. Custom sound adds wave selection and ADSR overrides, while custom partials allow arbitrary ratios, gains, and per-partial decay. Unset sound controls inherit the global synth.</span></div>
+    <div class="helpItem"><b>Links &amp; repeats</b><span>Row and group references make f₀ track the last played pad. Explicit scales repeat by an octave count set with Repeat every (oct); this can create multiple repeated copies across the visible range. Renaming a row also retargets references and bindings.</span></div>
     <div class="helpItem"><b>Projects</b><span>New, Save, and Load manage browser projects. Share creates a compressed URL. Settings &gt; Workspace also exports and imports JSON files or text.</span></div>
   </div>
   <div class="mbtns"><button class="accent" id="helpWhats">What's new</button><button id="helpClose">Close</button></div>`);
@@ -2225,6 +2232,7 @@ function openHelpModal(){
 function openWhatsNewModal(){
   openModal(`<h2>What's new in ScaleLab v${APP_VERSION}</h2>
   <ul class="releaseList">
+    <li><b>Expanded row &amp; Help documentation</b> — Help now explains row settings, harmonic ladders, 2-D harmonic clouds, chromatic equal divisions, explicit-ratio syntax, important presets, links, colour patterns, and custom sound.</li>
     <li><b>Mouse-wheel and touchpad scrolling</b> — the playing stack now scrolls vertically with the wheel or a touchpad gesture, while pad dragging and key sliding remain unchanged.</li>
     <li><b>Help</b> — a built-in quick guide now covers playing, views, expressions, spawn, assignment, and project sharing.</li>
     <li><b>Toolbar toggle feedback</b> — Rows and Sliders remain visibly active when enabled.</li>
