@@ -113,6 +113,12 @@ body.hideSliders .vhbar{display:none;}
 .adsr-group input[type=range]::-moz-range-track{width:20px;height:44px;background:#1b2432;border-radius:4px;border:1px solid #2b3648;}
 .adsr-group input[type=range]::-moz-range-thumb{width:16px;height:12px;border-radius:3px;background:var(--accent);border:1px solid #ffc27a;}
 .aboutBox{margin-top:14px;padding-top:10px;border-top:1px solid #232c3c;font-size:.6rem;color:#4d5a70;letter-spacing:.14em;line-height:1.9;font-family:monospace;}
+.helpGrid{display:grid;gap:8px;margin:8px 0 12px;}
+.helpItem{display:grid;grid-template-columns:112px 1fr;gap:10px;padding:7px 0;border-bottom:1px solid #202938;font-size:.78rem;line-height:1.45;}
+.helpItem:last-child{border-bottom:none;}
+.helpItem b{color:#cfe2ff;font-size:.72rem;letter-spacing:.04em;}
+.helpItem span{color:#9aa8c2;}
+.releaseList{margin:7px 0 10px 18px;color:#adb8ca;font-size:.78rem;line-height:1.55;}
 .pmGrid{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0;}
 .pmCard{width:152px;background:#0e131b;border:1px solid var(--line);border-radius:8px;padding:7px;display:flex;flex-direction:column;gap:5px;cursor:pointer;}
 .pmCard:hover{border-color:#3a465c;}
@@ -127,7 +133,7 @@ body.hideSliders .vhbar{display:none;}
 <body>
 
 <div id="toolbar">
-  <div id="brand"><span id="brandSvg"></span><div class="btxt"><b>ISOCTA</b><span>SCALELAB · V20</span></div></div>
+  <div id="brand"><span id="brandSvg"></span><div class="btxt"><b>ISOCTA</b><span>SCALELAB · V21</span></div></div>
   <span id="projName" class="dim" title="Current project — click to open Projects">unsaved</span>
   <input type="text" id="saveName" placeholder="project name…" spellcheck="false">
   <div class="tbsep"></div>
@@ -142,6 +148,7 @@ body.hideSliders .vhbar{display:none;}
   <button id="assignBtn" title="Toggle key-assignment mode (keyboard letters or MIDI notes)"></button>
   <button id="hdrBtn" title="Show/hide row headers"></button>
   <button id="slBtn" title="Show/hide view sliders"></button>
+  <button id="helpBtn" title="Help and what's new"></button>
   <button id="setBtn" title="Global settings"></button>
   <span id="susLed" title="Sustain — hold Shift, or tap to latch">SUS</span>
 </div>
@@ -180,6 +187,7 @@ const ICONS={
  save:'<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/>',
  open:'<path d="M2 7a1 1 0 0 1 1-1h5l2 2h10a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M12 11.5v4.5M9.8 13.6 12 11.4l2.2 2.2"/>',
  share:'<circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.3 10.6l7.4-3.4M8.3 13.4l7.4 3.4"/>'
+ ,help:'<circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 1 1 3.3 2.2c-.8.4-1 1.1-1 2"/><path d="M12 16.5h.01"/>'
 };
 const ic=(n,s=13)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="${s}" height="${s}" aria-hidden="true">${ICONS[n]}</svg>`;
 function octPts(r,rot){let s='';for(let i=0;i<8;i++){const a=rot+i*Math.PI/4;s+=(12+r*Math.cos(a)).toFixed(2)+','+(12+r*Math.sin(a)).toFixed(2)+' ';}return s;}
@@ -198,6 +206,8 @@ const rulerH = 30, HBH = 30, MINSPAN = 0.2, MINBODY = 36, TINYH = 14;
 const TOL_F = 2.5e-5;
 const EXACT_C = TOL_F*1200;
 const NEAR_C = 1;
+const APP_VERSION='21';
+const LS_WHATSNEW='isocta.scalelab.whatsnew';
 /* tabs → views → rows. `views` is a live alias of the ACTIVE tab's views;
    row/group refs resolve across ALL tabs. */
 let tabs = [];
@@ -2066,12 +2076,18 @@ assignBtn.onclick=()=>{
   setCanvasCursors(assignMode?'crosshair':'');
   rebuild();
 };
-document.getElementById('hdrBtn').onclick=()=>{ document.body.classList.toggle('hideHeaders'); scheduleGeom(); };
+document.getElementById('hdrBtn').onclick=()=>{
+  document.body.classList.toggle('hideHeaders');
+  document.getElementById('hdrBtn').classList.toggle('toggledOn',!document.body.classList.contains('hideHeaders'));
+  scheduleGeom();
+};
 document.getElementById('slBtn').onclick=()=>{
   settings.slidersHidden=!settings.slidersHidden;
   document.body.classList.toggle('hideSliders',settings.slidersHidden);
+  document.getElementById('slBtn').classList.toggle('toggledOn',!settings.slidersHidden);
   rebuild();
 };
+document.getElementById('helpBtn').onclick=openHelpModal;
 document.getElementById('setBtn').onclick=openGlobalModal;
 document.getElementById('projName').onclick=openProjectsModal;
 newBtn.onclick=()=>{
@@ -2188,6 +2204,35 @@ const modalBack=document.getElementById('modalBack'), modalBody=document.getElem
 function openModal(html){ modalBody.innerHTML=html; modalBack.classList.add('open'); }
 function closeModal(){ modalBack.classList.remove('open'); }
 modalBack.addEventListener('pointerdown',e=>{ if(e.target===modalBack) closeModal(); });
+
+function openHelpModal(){
+  openModal(`<h2>ScaleLab help</h2>
+  <div class="mhelp" style="margin:0 0 8px">Created by Jiří Programagor</div>
+  <div class="helpGrid">
+    <div class="helpItem"><b>Play</b><span>Click or touch a pad. Drag across the canvas to slide through nearby pads. Hold Shift or tap SUS to sustain voices. Shift also changes Assign into fixed-frequency mode.</span></div>
+    <div class="helpItem"><b>Rows &amp; views</b><span>Rows hold scales or harmonic series. Drag a row-header grip to resize it and the <b>⠿</b> handle to reorder or move it between views. Views have independent frequency ranges and vertical stacks.</span></div>
+    <div class="helpItem"><b>Scroll</b><span>Use the mouse wheel or touchpad over the playing area to move vertically. The right bar also scrolls; the bottom bar pans and zooms each view horizontally.</span></div>
+    <div class="helpItem"><b>Expressions</b><span>f₀ fields accept notes (C3, Bb4), arithmetic (3/2, 2^(3/12)), cents (500c), and row/group references. Ratios in Explicit rows use: ratio, colour, label, with one entry per line.</span></div>
+    <div class="helpItem"><b>Spawn</b><span>Arm Spawn, then press a pad. The new row tracks the source row/group. Hold Shift while pressing it to freeze an absolute pitch expression.</span></div>
+    <div class="helpItem"><b>Assign</b><span>Arm Assign, select a pad, then press a letter or a MIDI note. Normal assignment follows the pad's row; Shift plus a letter/MIDI note makes a fixed-frequency ruler binding.</span></div>
+    <div class="helpItem"><b>Projects</b><span>New, Save, and Load manage browser projects. Share creates a compressed URL. Settings &gt; Workspace also exports and imports JSON files or text.</span></div>
+  </div>
+  <div class="mbtns"><button class="accent" id="helpWhats">What's new</button><button id="helpClose">Close</button></div>`);
+  document.getElementById('helpClose').onclick=closeModal;
+  document.getElementById('helpWhats').onclick=openWhatsNewModal;
+}
+
+function openWhatsNewModal(){
+  openModal(`<h2>What's new in ScaleLab v${APP_VERSION}</h2>
+  <ul class="releaseList">
+    <li><b>Mouse-wheel and touchpad scrolling</b> — the playing stack now scrolls vertically with the wheel or a touchpad gesture, while pad dragging and key sliding remain unchanged.</li>
+    <li><b>Help</b> — a built-in quick guide now covers playing, views, expressions, spawn, assignment, and project sharing.</li>
+    <li><b>Toolbar toggle feedback</b> — Rows and Sliders remain visibly active when enabled.</li>
+  </ul>
+  <div class="mhelp" style="margin-left:18px">This note is shown once for each ScaleLab version.</div>
+  <div class="mbtns"><button class="accent" id="newsClose">Close</button></div>`);
+  document.getElementById('newsClose').onclick=closeModal;
+}
 
 function adsrOverridesOn(r){ return !!(r.wave||r.adsr.a!=null||r.adsr.d!=null||r.adsr.s!=null||r.adsr.r!=null); }
 const WAVE_OPTS=[['sine','Sine'],['triangle','Triangle'],['sawtooth','Sawtooth'],['square','Square'],['custom','Custom partials']];
@@ -2671,7 +2716,7 @@ function openGlobalModal(){
     <span class="mhelp" style="margin:0" id="mWsMsg"></span></div>
   <div class="frow"><textarea id="mWs" rows="4" style="flex:1" spellcheck="false" placeholder="raw workspace JSON — Projects (toolbar) also: files, browser storage, gzip share links"></textarea></div>
   <div class="mbtns"><button id="mCancel">Close</button><button class="accent" id="mSave">Save</button></div>
-  <div class="aboutBox">ISOCTA · APPLIED ACOUSTICS DIVISION · SCALELAB v20<br>© ISOCTA. FOR INTERNAL USE.</div>`);
+  <div class="aboutBox">ISOCTA · APPLIED ACOUSTICS DIVISION · SCALELAB v21<br>© ISOCTA. FOR INTERNAL USE.</div>`);
   const $=id=>document.getElementById(id);
   $('mGWave').onchange=e=>{ synth.wave=e.target.value;
     $('mGProw').style.display=synth.wave==='custom'?'flex':'none';
@@ -3029,6 +3074,15 @@ window.addEventListener('hashchange',async()=>{
 
 /* ================= init ================= */
 new ResizeObserver(()=>scheduleGeom()).observe(document.getElementById('cvwrap'));
+document.getElementById('cvwrap').addEventListener('wheel',e=>{
+  if(e.deltaY===0||modalBack.classList.contains('open')) return;
+  e.preventDefault();
+  const units=e.deltaMode===1?16:e.deltaMode===2?(wrapH_cache||document.getElementById('cvwrap').clientHeight):1;
+  const maxScroll=Math.max(0,totalStackH-(wrapH_cache||document.getElementById('cvwrap').clientHeight));
+  view.yScroll=Math.max(0,Math.min(maxScroll,view.yScroll+e.deltaY*units));
+  updateBars();
+  scheduleGeom();
+},{passive:false});
 document.getElementById('brandSvg').innerHTML=LOGO;
 newBtn.innerHTML=ic('fileNew')+' New';
 saveBtn.innerHTML=ic('save')+' Save';
@@ -3040,7 +3094,10 @@ spawnBtn.innerHTML=ic('spawn')+' Spawn';
 assignBtn.innerHTML=ic('keys')+' Assign';
 document.getElementById('hdrBtn').innerHTML=ic('rows')+' Rows';
 document.getElementById('slBtn').innerHTML=ic('sliders')+' Sliders';
+document.getElementById('helpBtn').innerHTML=ic('help')+' Help';
 document.getElementById('setBtn').innerHTML=ic('gear');
+document.getElementById('hdrBtn').classList.toggle('toggledOn',!document.body.classList.contains('hideHeaders'));
+document.getElementById('slBtn').classList.toggle('toggledOn',!settings.slidersHidden);
 
 function buildDemoTabs(){
   for(const t of tabs) for(const v of t.views) if(v.panel) v.panel.remove();
@@ -3095,6 +3152,11 @@ buildDemoTabs();
 setActiveProject('Demo');
 renderTabbar();
 requestAnimationFrame(()=>rebuild());
+function showWhatsNewOnce(){
+  if(store.get(LS_WHATSNEW)===APP_VERSION) return;
+  store.set(LS_WHATSNEW,APP_VERSION);
+  openWhatsNewModal();
+}
 (async function boot(){
   let ok=false;
   const h=location.hash||'';
@@ -3113,6 +3175,7 @@ requestAnimationFrame(()=>rebuild());
       }catch(e){}
     }
   }
+  showWhatsNewOnce();
   if(midiIn.inId&&navigator.requestMIDIAccess){ midiInEnable().catch(()=>{}); }
   if(midi.outId&&navigator.requestMIDIAccess){ midiEnable().catch(()=>{}); }
 })();
