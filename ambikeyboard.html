@@ -80,6 +80,7 @@ body.hideSliders .vhbar{display:none;}
 #statusBar{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:.7rem;color:#7c8aa5;padding:2px 10px;background:var(--panel);border-top:1px solid var(--line);white-space:nowrap;overflow:hidden;position:relative;z-index:2;flex:none;min-height:20px;}
 #hint{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;}
 #interval{flex:none;color:var(--accent2);font-family:monospace;max-width:48%;overflow:hidden;text-overflow:ellipsis;}
+#interval .dim{opacity:.62;}
 #readout{flex:none;color:#ffd700;font-family:monospace;}
 #modalBack{position:fixed;top:0;left:0;right:0;bottom:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:50;}
 #modalBack.open{display:flex;}
@@ -234,7 +235,7 @@ const rulerH = 30, HBH = 30, MINSPAN = 0.2, MINBODY = 36, TINYH = 14;
 const TOL_F = 2.5e-5;
 const EXACT_C = TOL_F*1200;
 const NEAR_C = 1;
-const APP_VERSION='21.3';
+const APP_VERSION='21.4';
 const LS_WHATSNEW='isocta.scalelab.whatsnew';
 /* tabs → views → rows. `views` is a live alias of the ACTIVE tab's views;
    row/group refs resolve across ALL tabs. */
@@ -259,7 +260,7 @@ function viewOfRow(row){ for(const t of tabs){ const v=t.views.find(v=>v.rows.in
 function nextRowId(){ let id; do{ id='row'+(uid++); }while(findRow(id)); return id; }
 function mkRow(o){ return Object.assign({
   id: nextRowId(), label:'', expr:'C4', type:'harmonic', groups:'',
-  ratiosTxt:'1\n9/8\n5/4\n4/3\n3/2\n5/3\n15/8', repeatOct:1, etDiv:12, amax:8, subs:true, yCurve:1, hdiv:1,
+  ratiosTxt:'1\n9/8\n5/4\n4/3\n3/2\n5/3\n15/8', repeatOct:1, etDiv:12, amax:32, subs:true, yCurve:1, hdiv:1,
   colMix:0, color:'#5aa9e6', usePat:false, patLen:12, pat:'101011010101', patOp:0.85,
   mute:false, wave:'', partials:null, adsr:{a:null,d:null,s:null,r:null},
   height:95, lastFreq:null, lastExpr:null, _lt:0, _ast:null, _astSrc:null, _f0:null, _err:null
@@ -652,6 +653,24 @@ function simplifyAbsolute(txt){
 }
 const CD=()=>Math.max(0,Math.min(3,settings.centDigits==null?1:settings.centDigits));
 const exprDisp=t=>t.replace(CENT_RE,'$1¢');
+const escHtml=s=>String(s).replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+function approxFraction(v,maxDen=4096,centsTol=1e-8){
+  if(!(v>0)||!isFinite(v)) return null;
+  let bn=0, bd=1, be=Infinity;
+  for(let d=1; d<=maxDen; d++){
+    const n=Math.round(v*d);
+    if(n<1) continue;
+    const e=Math.abs(n/d-v);
+    if(e<be){ bn=n; bd=d; be=e; }
+    if(e===0) break;
+  }
+  if(!bn) return null;
+  const g=gcd(Math.abs(bn),Math.abs(bd));
+  const n=bn/g, d=bd/g;
+  const cErr=Math.abs(1200*Math.log2((n/d)/v));
+  return cErr<=centsTol ? {n,d} : null;
+}
 
 const colorCtx=document.createElement('canvas').getContext('2d');
 function toHexColor(tok){
@@ -743,7 +762,7 @@ function genRowPoints(v,row){
       out.push({f,mult:d/k,label,spawn,tone:-k});
     }
   } else if(row.type==='cloud'){
-    const amax=Math.max(1,Math.min(1024,row.amax||8)), norm=Math.log2(amax)||1;
+    const amax=Math.max(1,Math.min(1024,row.amax||32)), norm=Math.log2(amax)||1;
     const gam=row.yCurve||1;
     const emit=(a,b,sub)=>{
       let num,den;
@@ -1084,12 +1103,24 @@ function intervalText(){
     if(dd<bd){ bd=dd; best=iv; }
   }
   let off=rc-best.cents; if(off>600)off-=1200; if(off<-600)off+=1200;
+  const exact=Math.abs(off)<=EXACT_C;
   let name=best.name;
   if(best.ratio==='1/1'&&oct>0) name=oct>1?oct+' octaves':'Octave';
+  const ratio=Math.max(f1,f2)/Math.min(f1,f2);
+  const frac=approxFraction(ratio);
+  const ratioS=frac?`${frac.n}/${frac.d}`:'';
+  const centsS=rc.toFixed(d)+'c'+(oct?`+${oct}oct`:'');
+  const left=`${escHtml(nearestNoteStr(f1))}→${escHtml(nearestNoteStr(f2))} ${dir}`;
+  if(exact){
+    const rhs=ratioS?`${ratioS} = ${centsS}`:centsS;
+    return `${left} ${rhs} = ${escHtml(name)}`;
+  }
   const offR=+off.toFixed(d);
   const offS=(Math.abs(offR)<Math.pow(10,-d)/2?'±0':(offR>0?'+':'−')+Math.abs(offR).toFixed(d));
-  return nearestNoteStr(f1)+'→'+nearestNoteStr(f2)+' '+dir+rc.toFixed(d)+'¢'
-       +(oct?'+'+oct+'oct':'')+' ≈ '+name+' ('+best.ratio+') '+offS+'¢';
+  const rhs=ratioS?`${ratioS} = ${centsS}`:centsS;
+  const showBestRatio=!ratioS||best.ratio!==ratioS;
+  const approxLabel=showBestRatio?`${name} (${best.ratio})`:name;
+  return `${left} ${rhs} <span class="dim">≈ ${escHtml(approxLabel)} ${offS}c</span>`;
 }
 function ensureViewDom(v){
   if(v.panel) return;
@@ -1747,7 +1778,7 @@ function layoutHeaders(){
     g.onpointerdown=e=>{
       e.preventDefault();
       const r=it.r, y0=e.clientY, h0=r.height;
-      const move=ev=>{ ev.preventDefault(); r.height=Math.max(1,Math.min(400,h0+ev.clientY-y0)); scheduleGeom(); };
+      const move=ev=>{ ev.preventDefault(); r.height=Math.max(1,h0+ev.clientY-y0); scheduleGeom(); };
       const finish=()=>{ window.removeEventListener('pointermove',move);
         window.removeEventListener('pointerup',finish);
         window.removeEventListener('pointercancel',finish);
@@ -2169,7 +2200,7 @@ function hint(t){ document.getElementById('hint').textContent =
 function updateReadout(){
   const fs=[...voices.values()].map(v=>fmtHz(v.f));
   document.getElementById('readout').textContent = fs.length? fs.join(' · ')+' Hz' : '';
-  document.getElementById('interval').textContent = intervalText();
+  document.getElementById('interval').innerHTML = intervalText();
 }
 
 /* ================= sliders ================= */
@@ -2229,14 +2260,19 @@ vthumb.addEventListener('pointerdown',dragWindow(e=>{
 
 /* ================= modals ================= */
 const modalBack=document.getElementById('modalBack'), modalBody=document.getElementById('modalBody');
+let modalCloseHook=null;
 function openModal(html,mode=''){
   modalBody.innerHTML=html;
   modalBack.classList.remove('helpMode','innerScrollMode');
+  modalCloseHook=null;
   if(mode==='help') modalBack.classList.add('helpMode');
   else if(mode==='inner-scroll') modalBack.classList.add('innerScrollMode');
   modalBack.classList.add('open');
 }
-function closeModal(){ modalBack.classList.remove('open','helpMode','innerScrollMode'); }
+function closeModal(){
+  if(modalCloseHook){ const fn=modalCloseHook; modalCloseHook=null; fn(); }
+  modalBack.classList.remove('open','helpMode','innerScrollMode');
+}
 modalBack.addEventListener('pointerdown',e=>{ if(e.target===modalBack) closeModal(); });
 
 function openHelpModal(){
@@ -2248,7 +2284,7 @@ function openHelpModal(){
    ['Getting started','projects','Projects & sharing','<h3>Projects &amp; sharing</h3><p><b>Save</b> stores named projects in this browser and thumbnails their current canvas. <b>Load</b> opens the project browser. <b>New</b> starts a small blank scene.</p><p><b>Share</b> compresses the workspace into a URL fragment. Settings also provides raw JSON export/import and the project browser supports files. The automatic session restore is separate from named saves.</p>'],
    ['Row settings','roweditor','Overview','<h3>Row settings overview</h3><p>Open a row by double-clicking its label or pressing its gear button. Edit the ID, label, comma-separated group memberships, f₀ expression, scale type, mute state, colours, and per-row synthesis.</p><p>An empty label displays the row ID. A muted row is still playable and still updates its last frequency, so it can be a silent tuning/controller source for rows that reference it.</p>'],
    ['Row settings','harmonic','Harmonic ladder','<h3>Harmonic ladder</h3><p>The ladder places integer multiples above f₀ and their reciprocal ratios below it: <code>×1, ×2, ×3…</code> and <code>÷2, ÷3…</code>.</p><h4>Fineness 1/n</h4><p>Fineness inserts subdivisions without creating an expanding hole around the root. For 1/2, the sequence is <code>×1, ×3/2, ×2, ×5/2…</code>, mirrored as <code>÷3/2, ÷2, ÷5/2…</code>. This is useful for overtone-series studies and for instrument/fingering demonstrations.</p>'],
-   ['Row settings','cloud','Harmonic 2D cloud','<h3>Harmonic 2D cloud</h3><p>The cloud lays out a true lattice at <code>f₀·a·2ᵇ</code>. Several points can have the same frequency at different vertical positions, so octave-related points form shaped, partially merged Voronoi regions.</p><ul><li><b>a max</b>: maximum harmonic component, up to 1024.</li><li><b>Y curve γ</b>: redistributes vertical spacing; smaller values spread fine divisions, larger values compress them.</li><li><b>Subharmonics</b>: mirrors <code>f₀·2ᵇ/a</code> below the centre. With it off, the overtone arc uses the full lane.</li></ul>'],
+   ['Row settings','cloud','Harmonic 2D cloud','<h3>Harmonic 2D cloud</h3><p>The cloud lays out a true lattice at <code>f₀·a·2ᵇ</code>. Several points can have the same frequency at different vertical positions, so octave-related points form shaped, partially merged Voronoi regions.</p><ul><li><b>a max</b>: maximum harmonic component, up to 1024 (default 32).</li><li><b>Y curve γ</b>: redistributes vertical spacing; smaller values spread fine divisions, larger values compress them.</li><li><b>Subharmonics</b>: mirrors <code>f₀·2ᵇ/a</code> below the centre. With it off, the overtone arc uses the full lane.</li></ul>'],
    ['Row settings','chromatic','Chromatic','<h3>Chromatic equal divisions</h3><p>The row generates <code>f₀·2^(k/steps)</code>. Tone zero is f₀; surrounding pads are labelled by positive and negative step offsets.</p><p>Steps/octave ranges from 2 to 31. Use 12 for 12-TET, or 19/22 and similar divisions to study nonstandard equal temperaments. A chromatic row with a 12-step piano light/dark pattern makes a conventional keyboard reference.</p>'],
    ['Row settings','explicit','Explicit ratios & presets','<h3>Explicit ratios</h3><p>Enter one interval per line: <code>ratio [, colour [, label]]</code>. Ratios are unitless multipliers of f₀. Examples are <code>5/4</code>, <code>9/8</code>, <code>2^(3/12)</code>, <code>386c</code>, and <code>386¢</code>. For a label without a custom colour, leave the colour field empty: <code>1, , Sa</code>.</p><h4>Useful presets</h4><ul><li>Piano and Janko: Black/White keys and whole-tone rows.</li><li>Just intonation: major, minor, Lydian, pentatonic, and Pythagorean.</li><li>Ragas with sargam names: Bhairav, Shree, Todi, Kafi, Bhairavi, and Khamaj.</li><li>22 named shrutis, quarter-comma meantone, Werckmeister III, Vallotti.</li><li>Slendro/Pelog approximations, Maqam Bayati, and harmonic segments.</li></ul><p><b>Repeat every (oct)</b> controls the octave period copied across the visible range. Lines beginning with # are comments; backslash escapes commas, backslashes, and newlines.</p>'],
    ['Row settings','appearance','Colour & patterns','<h3>Colour &amp; light/dark patterns</h3><p>Base hue follows the frequency’s position in an octave. <b>Colour mix</b> blends from rainbow toward the row swatch; an explicit pad’s own colour replaces that endpoint when present.</p><p>The light/dark pattern has a selectable length, a strength/opacity control, and up to 64 clickable swatches. Tone index means the harmonic in a ladder/cloud, the step offset in a chromatic row, or the list position in an explicit row. This lets piano patterns, odd-harmonic patterns, and custom repeating layouts share the same mechanism.</p>'],
@@ -2284,6 +2320,7 @@ function openHelpModal(){
 
 function openWhatsNewModal(){
   const releases=[
+   ['21.3','Help & navigation refresh',['Help moved to a responsive two-pane topic tree with focused Row Settings and Global Settings sections.','Added MIDI output rationale for channel-per-note pitch bend behavior.','Expanded row documentation coverage and improved wheel/touchpad vertical scrolling controls.','Rows and Sliders toolbar toggles now show enabled state.']],
    ['20','MIDI & controller polish',['Added MIDI input assignment for triggering pads from external controllers.','Added MIDI output device selection and configurable monophonic channel.','Preserved assignments when row IDs are renamed.']],
    ['19','Tabs, projects & sharing',['Added tabs containing independent stacks of views, with row/group references across tabs.','Added New/Save/Load, autosave, browser project thumbnails, JSON files, and compressed share URLs.']],
    ['18','Multi-view workspace foundations',['Added demonstrator workspaces for tuning, overtones, pianos, and trumpet valve combinations.','Introduced the tab/view/row project hierarchy and cross-tab references.']],
@@ -2308,11 +2345,11 @@ function openWhatsNewModal(){
   openModal(`<div class="newsShell"><h2>What's new in ScaleLab v${APP_VERSION}</h2>
   <div class="releaseScroll">
     <ul class="releaseList">
-      <li><b>Browsable Help</b> — Help is a responsive two-pane topic tree with focused Row Settings and Global Settings sections.</li>
-      <li><b>MIDI explained</b> — Help explains why channel-per-note MPE output is needed for independent microtonal pitch bends.</li>
-      <li><b>Expanded row documentation</b> — Harmonic ladders, 2-D clouds, chromatic rows, explicit-ratio syntax, presets, colour, sound, and linking are now covered.</li>
-      <li><b>Mouse-wheel and touchpad scrolling</b> — the playing stack scrolls vertically without changing touchscreen pad sliding.</li>
-      <li><b>Toolbar feedback</b> — Rows and Sliders show their enabled state.</li>
+      <li><b>Interval readout upgrade</b> — Rational intervals now show reduced ratios and cents+octave form (for example 64/7 and 231.2c+2oct), with exact named matches displayed using equals.</li>
+      <li><b>Smarter interval naming</b> — Exact chromatic and exact rational matches now resolve as exact names, while approximate names are shown dimmer.</li>
+      <li><b>Cloud editing polish</b> — Harmonic-cloud Y-curve changes now refresh the canvas live while editing.</li>
+      <li><b>Layout refinements</b> — Row resizing no longer has a hard maximum height, and custom-partial preset buttons are now arranged side by side.</li>
+      <li><b>Cloud defaults</b> — New harmonic-cloud rows now default a max to 32, with one-click a max presets (16/32/64/128/256).</li>
     </ul>
     <div class="mhelp" style="margin-left:18px">This latest release note is shown once for each ScaleLab version.</div>
     <section class="releaseHistory"><h3>Earlier versions</h3>
@@ -2334,7 +2371,7 @@ function partialsHTML(prefix,parts){
      <input type="text" class="${prefix}R pRatio" data-i="${i}" value="${+p.r.toFixed(4)}" spellcheck="false" title="ratio × f₀">
      <input type="text" class="${prefix}D pDecay" data-i="${i}" value="${p.d||''}" placeholder="·" spellcheck="false" title="decay s (blank = sustained)">
    </div>`).join('')+`</div>
-   <span style="display:flex;flex-direction:column;gap:2px;flex:none">
+   <span style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:2px;flex:none">
     <button class="${prefix}Add" title="Add partial" style="font-size:.62rem;padding:1px 4px">+</button>
     <button class="${prefix}Del" title="Remove last partial" style="font-size:.62rem;padding:1px 4px">−</button>
     ${Object.keys(PART_PRESETS).map(pr=>`<button class="${prefix}Pre" data-p="${pr}" style="font-size:.58rem;padding:1px 4px">${pr}</button>`).join('')}
@@ -2390,6 +2427,9 @@ function openRowModal(r){
   const mix0=Math.round((r.colMix||0)*100);
   const po0=Math.round((r.patOp==null?0.85:r.patOp)*100);
   const yc0=Math.round((r.yCurve||1)*100);
+  const origYCurve=r.yCurve||1;
+  let yCurvePreviewed=false;
+  let yCurveCommitted=false;
   let rp=r.partials?r.partials.map(p=>({...p})):defaultParts();
   openModal(`<div class="modalShell"><h2>Row settings — ${r.id}</h2>
   <div class="modalScroll">
@@ -2408,7 +2448,12 @@ function openRowModal(r){
   </select></div>
   <div class="frow" data-t="harmonic"><label>Fineness 1/n</label><input type="number" id="mHdiv" min="1" max="16" value="${r.hdiv||1}"></div>
   <div class="mhelp" data-t="harmonic">pads at ratios k/n and n/k, always starting at the fundamental:<br>n=1: ×1, ×2, ×3… /2, /3… · n=2: ×1, ×3/2, ×2, ×5/2… /3/2, /2, /5/2…<br>— finer steps per octave, no growing gap between the two ends</div>
-  <div class="frow" data-t="cloud"><label>a max</label><input type="number" id="mAmax" min="1" max="1024" value="${r.amax||8}"></div>
+  <div class="frow" data-t="cloud"><label>a max</label>
+    <input type="number" id="mAmax" min="1" max="1024" value="${r.amax||32}" style="max-width:88px;flex:none">
+    <span style="display:inline-flex;gap:3px;flex-wrap:wrap;align-items:center">
+      ${[16,32,64,128,256].map(v=>`<button type="button" class="mAmaxPre" data-v="${v}" style="font-size:.62rem;padding:1px 5px">${v}</button>`).join('')}
+    </span>
+  </div>
   <div class="frow" data-t="cloud"><label>Y curve γ</label><input type="range" id="mYC" min="5" max="500" value="${yc0}"><output id="mYCv">${(yc0/100).toFixed(2)}</output></div>
   <div class="frow" data-t="cloud"><label>Subharmonics</label><input type="checkbox" id="mSubs"${r.subs!==false?' checked':''}></div>
   <div class="mhelp" data-t="cloud">2-D lattice: f₀·a·2^b arcs ABOVE centre, f₀·2^b/a BELOW.<br>Lane height = (log₂a / log₂a_max)^γ. Subs OFF → overtone arc spans full lane.</div>
@@ -2500,7 +2545,14 @@ function openRowModal(r){
   $('mPatLen').oninput=()=>{ if($('mUsePat').checked) renderPat(); };
   $('mPatOp').oninput=e=>{ $('mPatOpV').textContent=e.target.value+'%'; };
   $('mMix').oninput=e=>{ $('mMixV').textContent=e.target.value+'%'; };
-  $('mYC').oninput=e=>{ $('mYCv').textContent=(e.target.value/100).toFixed(2); };
+  $('mYC').oninput=e=>{
+    $('mYCv').textContent=(e.target.value/100).toFixed(2);
+    if($('mType').value==='cloud'){
+      r.yCurve=Math.max(0.05,Math.min(5,(+e.target.value||100)/100));
+      yCurvePreviewed=true;
+      rebuild();
+    }
+  };
   $('mSnd').onchange=e=>{ $('mSndBox').style.display=e.target.checked?'block':'none'; };
   $('mWave').onchange=e=>{ $('mRProw').style.display=e.target.value==='custom'?'flex':'none';
     $('mRPh').style.display=e.target.value==='custom'?'block':'none'; };
@@ -2512,6 +2564,13 @@ function openRowModal(r){
   syncT();
   if(r.usePat) renderPat();
   $('mPreset').onchange=e=>{ if(e.target.value) $('mRat').value=PRESETS[e.target.value]; };
+  modalBody.querySelectorAll('.mAmaxPre').forEach(b=>{ b.onclick=e=>{ e.preventDefault(); $('mAmax').value=b.dataset.v; }; });
+  modalCloseHook=()=>{
+    if(yCurvePreviewed&&!yCurveCommitted&&r.yCurve!==origYCurve){
+      r.yCurve=origYCurve;
+      rebuild();
+    }
+  };
   $('mCancel').onclick=closeModal;
   $('mDelete').onclick=()=>{ deleteRow(r); closeModal(); };
   $('mSave').onclick=()=>{
@@ -2538,7 +2597,7 @@ function openRowModal(r){
       r.type=type;
       r.etDiv=Math.max(2,Math.min(31,parseInt($('mEt').value)||12));
       r.hdiv=Math.max(1,Math.min(16,parseInt($('mHdiv').value)||1));
-      r.amax=Math.max(1,Math.min(1024,parseInt($('mAmax').value)||8));
+      r.amax=Math.max(1,Math.min(1024,parseInt($('mAmax').value)||32));
       r.subs=$('mSubs').checked;
       r.yCurve=Math.max(0.05,Math.min(5,(+$('mYC').value||100)/100));
       r.ratiosTxt=ratTxt;
@@ -2558,6 +2617,7 @@ function openRowModal(r){
         r.partials=(r.wave==='custom')?readPartialsUI('mRP'):null;
         r.adsr={a:+$('mSA').value/1000, d:+$('mSD').value/1000, s:+$('mSS').value/100, r:+$('mSR').value/1000};
       } else { r.wave=''; r.partials=null; r.adsr={a:null,d:null,s:null,r:null}; }
+      yCurveCommitted=true;
       closeModal(); rebuild();
     }catch(e){ err.textContent=e.message; }
   };
