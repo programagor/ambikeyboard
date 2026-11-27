@@ -113,6 +113,35 @@ body.hideSliders .vhbar{display:none;}
 .adsr-group input[type=range]::-moz-range-track{width:20px;height:44px;background:#1b2432;border-radius:4px;border:1px solid #2b3648;}
 .adsr-group input[type=range]::-moz-range-thumb{width:16px;height:12px;border-radius:3px;background:var(--accent);border:1px solid #ffc27a;}
 .aboutBox{margin-top:14px;padding-top:10px;border-top:1px solid #232c3c;font-size:.6rem;color:#4d5a70;letter-spacing:.14em;line-height:1.9;font-family:monospace;}
+#modalBack.helpMode #modalBox{width:min(820px,96vw);padding:0;overflow:hidden;}
+.helpShell{display:flex;flex-direction:column;height:min(72vh,650px);min-height:320px;}
+.helpTop{padding:14px 18px 10px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.helpTop h2{margin:0;}
+.helpTop .credit{font-size:.65rem;color:#6f7f9c;font-family:monospace;}
+.helpLayout{display:flex;min-height:0;flex:1;}
+.helpTree{width:220px;flex:none;overflow:auto;padding:10px 8px;background:#0e131b;border-right:1px solid var(--line);}
+.helpGroup{margin:2px 0 8px;}
+.helpGroup>span{display:block;padding:3px 8px;color:#66758d;font-size:.58rem;letter-spacing:.16em;text-transform:uppercase;}
+.helpTopic{display:block;width:100%;text-align:left;padding:6px 9px;margin:1px 0;border:1px solid transparent;background:transparent;color:#9facbf;font-size:.75rem;border-radius:5px;}
+.helpTopic:hover{filter:none;background:#182130;color:#e5edf9;}
+.helpTopic.active{background:#203045;border-color:#3b536f;color:#fff;box-shadow:inset 3px 0 0 var(--accent2);}
+.helpContent{flex:1;min-width:0;overflow:auto;padding:20px 24px 28px;color:#adb8ca;font-size:.8rem;line-height:1.65;}
+.helpContent h3{font-size:1rem;color:#e9effa;margin-bottom:4px;}
+.helpContent h4{font-size:.78rem;color:#d8e4f7;margin:16px 0 4px;letter-spacing:.04em;}
+.helpContent p{margin:7px 0;}
+.helpContent ul{margin:7px 0 10px 18px;}
+.helpContent code{background:#0b1018;border:1px solid #263146;border-radius:4px;padding:1px 4px;color:#d9e8ff;font-size:.92em;}
+.helpFoot{padding:9px 16px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px;background:var(--panel);}
+@media(max-width:580px){.helpTree{width:150px}.helpContent{padding:16px}.helpTop{padding:12px 14px}.helpTree .helpTopic{font-size:.68rem;padding:5px 6px}}
+.releaseList{margin:7px 0 10px 18px;color:#adb8ca;font-size:.78rem;line-height:1.55;}
+.newsShell{display:flex;flex-direction:column;max-height:calc(88vh - 32px);min-height:0;}
+.releaseScroll{overflow:auto;min-height:0;padding-right:8px;margin-right:-8px;}
+.releaseHistory{margin-top:14px;border-top:1px solid var(--line);padding-top:9px;}
+.releaseHistory>h3{font-size:.75rem;letter-spacing:.12em;text-transform:uppercase;color:#71809a;margin-bottom:7px;}
+.releaseEntry{border:1px solid #253043;border-radius:7px;margin:6px 0;background:#101620;}
+.releaseEntry summary{padding:8px 10px;cursor:pointer;color:#cbd7e8;font-size:.76rem;list-style-position:inside;}
+.releaseEntry summary span{color:#70809a;font-weight:normal;margin-left:6px;}
+.releaseEntry ul{margin:0 10px 10px 27px;color:#99a6b9;font-size:.72rem;line-height:1.5;}
 .pmGrid{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0;}
 .pmCard{width:152px;background:#0e131b;border:1px solid var(--line);border-radius:8px;padding:7px;display:flex;flex-direction:column;gap:5px;cursor:pointer;}
 .pmCard:hover{border-color:#3a465c;}
@@ -127,7 +156,7 @@ body.hideSliders .vhbar{display:none;}
 <body>
 
 <div id="toolbar">
-  <div id="brand"><span id="brandSvg"></span><div class="btxt"><b>ISOCTA</b><span>SCALELAB · V20</span></div></div>
+  <div id="brand"><span id="brandSvg"></span><div class="btxt"><b>ISOCTA</b><span>SCALELAB · V21.3</span></div></div>
   <span id="projName" class="dim" title="Current project — click to open Projects">unsaved</span>
   <input type="text" id="saveName" placeholder="project name…" spellcheck="false">
   <div class="tbsep"></div>
@@ -142,6 +171,7 @@ body.hideSliders .vhbar{display:none;}
   <button id="assignBtn" title="Toggle key-assignment mode (keyboard letters or MIDI notes)"></button>
   <button id="hdrBtn" title="Show/hide row headers"></button>
   <button id="slBtn" title="Show/hide view sliders"></button>
+  <button id="helpBtn" title="Help and what's new"></button>
   <button id="setBtn" title="Global settings"></button>
   <span id="susLed" title="Sustain — hold Shift, or tap to latch">SUS</span>
 </div>
@@ -180,6 +210,7 @@ const ICONS={
  save:'<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/>',
  open:'<path d="M2 7a1 1 0 0 1 1-1h5l2 2h10a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M12 11.5v4.5M9.8 13.6 12 11.4l2.2 2.2"/>',
  share:'<circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.3 10.6l7.4-3.4M8.3 13.4l7.4 3.4"/>'
+ ,help:'<circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 1 1 3.3 2.2c-.8.4-1 1.1-1 2"/><path d="M12 16.5h.01"/>'
 };
 const ic=(n,s=13)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="${s}" height="${s}" aria-hidden="true">${ICONS[n]}</svg>`;
 function octPts(r,rot){let s='';for(let i=0;i<8;i++){const a=rot+i*Math.PI/4;s+=(12+r*Math.cos(a)).toFixed(2)+','+(12+r*Math.sin(a)).toFixed(2)+' ';}return s;}
@@ -198,6 +229,8 @@ const rulerH = 30, HBH = 30, MINSPAN = 0.2, MINBODY = 36, TINYH = 14;
 const TOL_F = 2.5e-5;
 const EXACT_C = TOL_F*1200;
 const NEAR_C = 1;
+const APP_VERSION='21.3';
+const LS_WHATSNEW='isocta.scalelab.whatsnew';
 /* tabs → views → rows. `views` is a live alias of the ACTIVE tab's views;
    row/group refs resolve across ALL tabs. */
 let tabs = [];
@@ -2066,12 +2099,18 @@ assignBtn.onclick=()=>{
   setCanvasCursors(assignMode?'crosshair':'');
   rebuild();
 };
-document.getElementById('hdrBtn').onclick=()=>{ document.body.classList.toggle('hideHeaders'); scheduleGeom(); };
+document.getElementById('hdrBtn').onclick=()=>{
+  document.body.classList.toggle('hideHeaders');
+  document.getElementById('hdrBtn').classList.toggle('toggledOn',!document.body.classList.contains('hideHeaders'));
+  scheduleGeom();
+};
 document.getElementById('slBtn').onclick=()=>{
   settings.slidersHidden=!settings.slidersHidden;
   document.body.classList.toggle('hideSliders',settings.slidersHidden);
+  document.getElementById('slBtn').classList.toggle('toggledOn',!settings.slidersHidden);
   rebuild();
 };
+document.getElementById('helpBtn').onclick=openHelpModal;
 document.getElementById('setBtn').onclick=openGlobalModal;
 document.getElementById('projName').onclick=openProjectsModal;
 newBtn.onclick=()=>{
@@ -2185,9 +2224,93 @@ vthumb.addEventListener('pointerdown',dragWindow(e=>{
 
 /* ================= modals ================= */
 const modalBack=document.getElementById('modalBack'), modalBody=document.getElementById('modalBody');
-function openModal(html){ modalBody.innerHTML=html; modalBack.classList.add('open'); }
-function closeModal(){ modalBack.classList.remove('open'); }
+function openModal(html,mode=''){ modalBody.innerHTML=html; modalBack.classList.toggle('helpMode',mode==='help'); modalBack.classList.add('open'); }
+function closeModal(){ modalBack.classList.remove('open','helpMode'); }
 modalBack.addEventListener('pointerdown',e=>{ if(e.target===modalBack) closeModal(); });
+
+function openHelpModal(){
+  const topics=[
+   ['Getting started','play','Play & sustain','<h3>Play &amp; sustain</h3><p>Click or touch a pad to sound it. Drag across the canvas to move the voice through adjacent pads; multitouch gives independent fingers and voices. Hold Shift, or tap <b>SUS</b>, to keep released notes alive.</p><p>The pad is determined by the shared Voronoi map, not only by its row. Identical frequencies can merge into one region, while exact-frequency highlights remain visible across rows.</p>'],
+   ['Getting started','navigation','Rows, views & scrolling','<h3>Rows, views &amp; scrolling</h3><p>Rows are scale lanes. Tabs contain independently scrollable stacks of views, and each view has its own horizontal frequency range, ruler, and bottom range control.</p><ul><li>Wheel or touchpad over the playing area: scroll vertically.</li><li>Right scrollbar: drag the visible stack position.</li><li>Bottom range bar: drag the range or handles to pan/zoom.</li><li>Row bottom edge: resize. Row left handle: reorder or move between views.</li><li>Collapsed-row run: use the restore button to expand the whole run.</li></ul>'],
+   ['Getting started','expressions','Pitch expressions','<h3>Pitch expressions</h3><p>An <b>f₀</b> expression may use notes, arithmetic, cents, row references, or group references: <code>C3*3/2</code>, <code>A4+150c</code>, <code>white/2</code>, or <code>keys</code>. A group resolves to the most recently played pad in any member row, including another tab.</p><p>Cents use 100¢ per equal-tempered semitone. The header and Spawn use the soft expression form to preserve musical ratios; the row editor’s Simplify button deliberately performs a stronger octave/note rewrite.</p>'],
+   ['Getting started','spawn','Spawn & assign','<h3>Spawn &amp; assign</h3><h4>Spawn</h4><p>Arm Spawn, then press a pad. The new row inherits the source expression plus the pad ratio. A normal spawn remains linked when the source uses a row/group reference; hold Shift for an absolute pitch expression.</p><h4>Assign</h4><p>Arm Assign, select a pad, then press a computer key or a MIDI note. Normal bindings follow the row as f₀ changes. Hold Shift to create a fixed-Hz binding and ruler pin instead. The Bindings manager can retarget, convert, or delete bindings.</p>'],
+   ['Getting started','projects','Projects & sharing','<h3>Projects &amp; sharing</h3><p><b>Save</b> stores named projects in this browser and thumbnails their current canvas. <b>Load</b> opens the project browser. <b>New</b> starts a small blank scene.</p><p><b>Share</b> compresses the workspace into a URL fragment. Settings also provides raw JSON export/import and the project browser supports files. The automatic session restore is separate from named saves.</p>'],
+   ['Row settings','roweditor','Overview','<h3>Row settings overview</h3><p>Open a row by double-clicking its label or pressing its gear button. Edit the ID, label, comma-separated group memberships, f₀ expression, scale type, mute state, colours, and per-row synthesis.</p><p>An empty label displays the row ID. A muted row is still playable and still updates its last frequency, so it can be a silent tuning/controller source for rows that reference it.</p>'],
+   ['Row settings','harmonic','Harmonic ladder','<h3>Harmonic ladder</h3><p>The ladder places integer multiples above f₀ and their reciprocal ratios below it: <code>×1, ×2, ×3…</code> and <code>÷2, ÷3…</code>.</p><h4>Fineness 1/n</h4><p>Fineness inserts subdivisions without creating an expanding hole around the root. For 1/2, the sequence is <code>×1, ×3/2, ×2, ×5/2…</code>, mirrored as <code>÷3/2, ÷2, ÷5/2…</code>. This is useful for overtone-series studies and for instrument/fingering demonstrations.</p>'],
+   ['Row settings','cloud','Harmonic 2D cloud','<h3>Harmonic 2D cloud</h3><p>The cloud lays out a true lattice at <code>f₀·a·2ᵇ</code>. Several points can have the same frequency at different vertical positions, so octave-related points form shaped, partially merged Voronoi regions.</p><ul><li><b>a max</b>: maximum harmonic component, up to 1024.</li><li><b>Y curve γ</b>: redistributes vertical spacing; smaller values spread fine divisions, larger values compress them.</li><li><b>Subharmonics</b>: mirrors <code>f₀·2ᵇ/a</code> below the centre. With it off, the overtone arc uses the full lane.</li></ul>'],
+   ['Row settings','chromatic','Chromatic','<h3>Chromatic equal divisions</h3><p>The row generates <code>f₀·2^(k/steps)</code>. Tone zero is f₀; surrounding pads are labelled by positive and negative step offsets.</p><p>Steps/octave ranges from 2 to 31. Use 12 for 12-TET, or 19/22 and similar divisions to study nonstandard equal temperaments. A chromatic row with a 12-step piano light/dark pattern makes a conventional keyboard reference.</p>'],
+   ['Row settings','explicit','Explicit ratios & presets','<h3>Explicit ratios</h3><p>Enter one interval per line: <code>ratio [, colour [, label]]</code>. Ratios are unitless multipliers of f₀. Examples are <code>5/4</code>, <code>9/8</code>, <code>2^(3/12)</code>, <code>386c</code>, and <code>386¢</code>. For a label without a custom colour, leave the colour field empty: <code>1, , Sa</code>.</p><h4>Useful presets</h4><ul><li>Piano and Janko: Black/White keys and whole-tone rows.</li><li>Just intonation: major, minor, Lydian, pentatonic, and Pythagorean.</li><li>Ragas with sargam names: Bhairav, Shree, Todi, Kafi, Bhairavi, and Khamaj.</li><li>22 named shrutis, quarter-comma meantone, Werckmeister III, Vallotti.</li><li>Slendro/Pelog approximations, Maqam Bayati, and harmonic segments.</li></ul><p><b>Repeat every (oct)</b> controls the octave period copied across the visible range. Lines beginning with # are comments; backslash escapes commas, backslashes, and newlines.</p>'],
+   ['Row settings','appearance','Colour & patterns','<h3>Colour &amp; light/dark patterns</h3><p>Base hue follows the frequency’s position in an octave. <b>Colour mix</b> blends from rainbow toward the row swatch; an explicit pad’s own colour replaces that endpoint when present.</p><p>The light/dark pattern has a selectable length, a strength/opacity control, and up to 64 clickable swatches. Tone index means the harmonic in a ladder/cloud, the step offset in a chromatic row, or the list position in an explicit row. This lets piano patterns, odd-harmonic patterns, and custom repeating layouts share the same mechanism.</p>'],
+   ['Row settings','links','Links & repetition','<h3>Links &amp; repetition</h3><p>Rows can reference another row ID or a group in f₀. The result is the referenced row’s/group’s last-played pitch, so muted controller rows can retune an entire instrument.</p><p>Group names are comma-separated memberships. Group references work across tabs. Renaming a row updates expressions and bindings; deleting a row substitutes its f₀ expression where possible. Explicit-ratio rows have a separate octave repeat control, so repeated scale copies need not be typed manually.</p>'],
+   ['Row settings','rowsound','Per-row sound','<h3>Per-row sound</h3><p>By default a row inherits the global synthesizer. Enabling Custom sound supplies a waveform and ADSR envelope for that row.</p><p>The custom-partial editor creates additive sine components at arbitrary ratios to f₀. Each partial has gain and an optional decay: ratios can be integer harmonics or irrational numbers for bell/rod-like spectra. Saw, square, triangle, bell, rod, and other presets provide starting points.</p>'],
+   ['Global settings','tuning','Tuning & synth','<h3>Tuning &amp; global synth</h3><h4>A4 reference</h4><p>A4 sets the absolute conversion for note names, 12-TET annotations, and frequency labels. Changing it retunes note-name expressions without changing ratio-only arithmetic.</p><h4>Default sound</h4><p>Wave, partials, volume, and ADSR provide the inherited instrument for rows without overrides. Attack/decay/release are seconds/ms controls; sustain is a percentage level. Custom partial ratios and decays are per-component, not forced to integer harmonics.</p>'],
+   ['Global settings','visual','Spectrum & guides','<h3>Spectrum &amp; guides</h3><p>The FFT is drawn behind the 12-TET ruler using the active view’s logarithmic frequency range. Larger FFT sizes give better low-frequency precision but update more slowly.</p><ul><li><b>Freq cursor:</b> a vertical line at every sounding fundamental.</li><li><b>Partials:</b> optional differently coloured lines for the actual sounding partials.</li><li><b>Halo:</b> shows nearby pad frequencies out to a cents radius, separately from exact matches.</li><li><b>Voronoi bias:</b> changes the importance of vertical vs horizontal distance when partitioning pads.</li><li><b>Cents digits:</b> controls display precision; entering c or ¢ works in fields.</li></ul>'],
+   ['Global settings','midiout','MIDI output','<h3>MIDI output</h3><p>MIDI pitch is nominally 12-TET, and pitch bend is a <em>channel-wide</em> controller. If two simultaneous notes use different microtonal bends, one shared channel would move both notes. MPE mode therefore allocates a fresh channel to each live note (channels 2–16), so every note can carry its own note number and bend.</p><p><b>Bend range</b> must match the receiving synth’s range. Larger ranges permit wider microtonal and glissando excursions, but reduce bend resolution. If the receiver has only conventional monophonic MIDI, use Monophonic mode and choose the hardware’s listening channel; notes are legato and bend is shared, as a last-resort approximation.</p>'],
+   ['Global settings','midiin','MIDI input & bindings','<h3>MIDI input &amp; bindings</h3><p>Choose an input and an incoming channel (or Omni). In Assign mode, select a pad and play a MIDI key to bind that note exactly like a computer letter. A normal binding follows the target row as it retunes; Shift makes it fixed frequency.</p><p>This supports controller workflows: bind a MIDI note to a muted root pad, reference that pad from another row, then bind a second register of notes to pads on the follower row. The first note silently retunes the follower, while the others perform on it.</p><p>MIDI input bindings and MIDI output targets are independent choices, so the same hardware can be used for input, output, or split roles on different channels.</p>'],
+   ['Global settings','other','Bindings & workspace','<h3>Bindings &amp; workspace</h3><p>The Bindings manager lists keyboard and MIDI bindings. Follow bindings store the target row and multiplier; fixed bindings store an absolute frequency and pin it to the ruler.</p><p>Workspace export/import carries settings, rows, tabs, views, bindings, and synth state. The Voronoi, spectrum, and interface settings are part of the workspace rather than the synthesis engine itself.</p>']
+  ];
+  const groups=[];
+  topics.forEach(t=>{ if(!groups.includes(t[0])) groups.push(t[0]); });
+  openModal(`<div class="helpShell">
+    <div class="helpTop"><div><h2>ScaleLab help</h2><span class="credit">Created by Jiří Programagor</span></div><span class="credit">v${APP_VERSION}</span></div>
+    <div class="helpLayout">
+      <nav class="helpTree">${groups.map(g=>`<div class="helpGroup"><span>${g}</span>${topics.filter(t=>t[0]===g).map(t=>`<button class="helpTopic" data-help="${t[1]}">${t[2]}</button>`).join('')}</div>`).join('')}</nav>
+      <article class="helpContent" id="helpContent"></article>
+    </div>
+    <div class="helpFoot"><button class="accent" id="helpWhats">What's new</button><button id="helpClose">Close</button></div>
+  </div>`,'help');
+  const show=id=>{
+    const topic=topics.find(t=>t[1]===id)||topics[0];
+    document.getElementById('helpContent').innerHTML=topic[3];
+    document.getElementById('helpContent').scrollTop=0;
+    modalBody.querySelectorAll('.helpTopic').forEach(b=>b.classList.toggle('active',b.dataset.help===topic[1]));
+  };
+  modalBody.querySelectorAll('.helpTopic').forEach(b=>b.onclick=()=>show(b.dataset.help));
+  document.getElementById('helpClose').onclick=closeModal;
+  document.getElementById('helpWhats').onclick=openWhatsNewModal;
+  show('play');
+}
+
+function openWhatsNewModal(){
+  const releases=[
+   ['20','MIDI & controller polish',['Added MIDI input assignment for triggering pads from external controllers.','Added MIDI output device selection and configurable monophonic channel.','Preserved assignments when row IDs are renamed.']],
+   ['19','Tabs, projects & sharing',['Added tabs containing independent stacks of views, with row/group references across tabs.','Added New/Save/Load, autosave, browser project thumbnails, JSON files, and compressed share URLs.']],
+   ['18','Multi-view workspace foundations',['Added demonstrator workspaces for tuning, overtones, pianos, and trumpet valve combinations.','Introduced the tab/view/row project hierarchy and cross-tab references.']],
+   ['17','Views and compact controls',['Added independently ranged frequency views and per-view rulers/sliders.','Added controls to collapse rulers/sliders and drag rows between stacked views.']],
+   ['16','Row & header geometry',['Made the row-header column resizable and allowed rows to shrink to one pixel.','Added collapsed-row restore controls and per-view ruler/FFT toggles.']],
+   ['15','Stacked frequency views',['Separated the canvas into views with independent frequency windows, rulers, range sliders, zoom, and octave buttons.','Kept a stable row/view geometry and per-view delete/drop targets.']],
+   ['14','Musical expression refinement',['Split soft display/spawn simplification from explicit hard Simplify behavior.','Preferred ratios during spawning and composition while preserving cents when appropriate.','Changed harmonic fineness into true subdivisions around the fundamental.']],
+   ['13','Exact expression lineage',['Tracked the arithmetic expression of the last-played pad alongside its numeric frequency.','Spawned rows now inherit source expressions, including group references and rational multipliers.','Improved contrast on frequency cursors and FFT precision.']],
+   ['12','Cursors, halos & partial decay',['Added frequency and partial cursors with exact/near-match halo tiers.','Added per-partial decay and wrapped adjustable partial editors.','Added cents display precision and support for the ¢ input symbol.']],
+   ['11','Inharmonic synthesis',['Replaced periodic custom voices with arbitrary-ratio additive partials.','Added bell, stiff-rod, marimba, and waveform-style partial presets.','Improved sustained-note polyphony with a mouse and fixed cross-row label merging.']],
+   ['10','Sustain, MIDI output & spectrum',['Added Shift/latched sustain, MPE-style MIDI output, and a logarithmic FFT display.','Introduced the ISOCTA ScaleLab identity and consistent icon-based controls.']],
+   ['9','Cloud labels & interval recognition',['Improved harmonic-cloud label merging and vertical shaping controls.','Expanded cloud a_max and light/dark patterns, and added nearest-interval identification.']],
+   ['8','Structured ratios, groups & clouds',['Changed explicit entries to strict positional ratio/colour/label fields with escaping and comments.','Added row groups, grouped presets, and the first 2-D harmonic-cloud row type.']],
+   ['7','Binding and annotation fixes',['Fixed nearest-note labels, fixed-frequency Shift assignment, and fixed bindings using global sound.','Moved global synthesis into Settings and separated fixed and following key bindings.']],
+   ['6','Workspace and binding management',['Added JSON workspace export/import, a bindings manager, and fixed/follow binding modes.','Added microtonal nearest-note annotations plus Raga and 22-shruti demo rows.']],
+   ['5','Cents and explicit piano scenes',['Added grammatical cents support in f₀ and ratio expressions using 2^(c/1200).','Added cents-based Black/White key presets, one-pixel culling, and unified synthesis controls.']],
+   ['4','Merged-region correctness',['Fixed cross-row note highlights and duplicate-frequency region colouring.','Unified rainbow/custom-colour blending and introduced repeatable light/dark patterns.']],
+   ['3','Explicit key colour & piano patterns',['Added per-key colours and labels for explicit rows.','Added a 12-TET piano preset and chromatic light/dark patterns with reusable checkboxes.']],
+   ['2','Canvas, touch & Voronoi fixes',['Fixed canvas sizing/overlays, pointer rebuilds, highlighting, and off-canvas Voronoi participants.','Added seamless duplicate-frequency dissolve behavior and the Voronoi vertical-bias control.']],
+   ['1','Harmonic keyboard MVP',['Introduced rows, tuning expressions, shared-canvas Voronoi pads, Web Audio, multitouch sliding, spawning, row settings, bindings, and a 12-TET ruler.']]
+  ];
+  openModal(`<div class="newsShell"><h2>What's new in ScaleLab v${APP_VERSION}</h2>
+  <div class="releaseScroll">
+    <ul class="releaseList">
+      <li><b>Browsable Help</b> — Help is a responsive two-pane topic tree with focused Row Settings and Global Settings sections.</li>
+      <li><b>MIDI explained</b> — Help explains why channel-per-note MPE output is needed for independent microtonal pitch bends.</li>
+      <li><b>Expanded row documentation</b> — Harmonic ladders, 2-D clouds, chromatic rows, explicit-ratio syntax, presets, colour, sound, and linking are now covered.</li>
+      <li><b>Mouse-wheel and touchpad scrolling</b> — the playing stack scrolls vertically without changing touchscreen pad sliding.</li>
+      <li><b>Toolbar feedback</b> — Rows and Sliders show their enabled state.</li>
+    </ul>
+    <div class="mhelp" style="margin-left:18px">This latest release note is shown once for each ScaleLab version.</div>
+    <section class="releaseHistory"><h3>Earlier versions</h3>
+      ${releases.map(([v,name,items])=>`<details class="releaseEntry"><summary>v${v} <span>${name}</span></summary><ul>${items.map(x=>`<li>${x}</li>`).join('')}</ul></details>`).join('')}
+    </section>
+  </div>
+  <div class="mbtns"><button class="accent" id="newsClose">Close</button></div></div>`);
+  document.getElementById('newsClose').onclick=closeModal;
+}
 
 function adsrOverridesOn(r){ return !!(r.wave||r.adsr.a!=null||r.adsr.d!=null||r.adsr.s!=null||r.adsr.r!=null); }
 const WAVE_OPTS=[['sine','Sine'],['triangle','Triangle'],['sawtooth','Sawtooth'],['square','Square'],['custom','Custom partials']];
@@ -2671,7 +2794,7 @@ function openGlobalModal(){
     <span class="mhelp" style="margin:0" id="mWsMsg"></span></div>
   <div class="frow"><textarea id="mWs" rows="4" style="flex:1" spellcheck="false" placeholder="raw workspace JSON — Projects (toolbar) also: files, browser storage, gzip share links"></textarea></div>
   <div class="mbtns"><button id="mCancel">Close</button><button class="accent" id="mSave">Save</button></div>
-  <div class="aboutBox">ISOCTA · APPLIED ACOUSTICS DIVISION · SCALELAB v20<br>© ISOCTA. FOR INTERNAL USE.</div>`);
+  <div class="aboutBox">ISOCTA · APPLIED ACOUSTICS DIVISION · SCALELAB v${APP_VERSION}<br>© ISOCTA. FOR INTERNAL USE.</div>`);
   const $=id=>document.getElementById(id);
   $('mGWave').onchange=e=>{ synth.wave=e.target.value;
     $('mGProw').style.display=synth.wave==='custom'?'flex':'none';
@@ -3029,6 +3152,15 @@ window.addEventListener('hashchange',async()=>{
 
 /* ================= init ================= */
 new ResizeObserver(()=>scheduleGeom()).observe(document.getElementById('cvwrap'));
+document.getElementById('cvwrap').addEventListener('wheel',e=>{
+  if(e.deltaY===0||modalBack.classList.contains('open')) return;
+  e.preventDefault();
+  const units=e.deltaMode===1?16:e.deltaMode===2?(wrapH_cache||document.getElementById('cvwrap').clientHeight):1;
+  const maxScroll=Math.max(0,totalStackH-(wrapH_cache||document.getElementById('cvwrap').clientHeight));
+  view.yScroll=Math.max(0,Math.min(maxScroll,view.yScroll+e.deltaY*units));
+  updateBars();
+  scheduleGeom();
+},{passive:false});
 document.getElementById('brandSvg').innerHTML=LOGO;
 newBtn.innerHTML=ic('fileNew')+' New';
 saveBtn.innerHTML=ic('save')+' Save';
@@ -3040,7 +3172,10 @@ spawnBtn.innerHTML=ic('spawn')+' Spawn';
 assignBtn.innerHTML=ic('keys')+' Assign';
 document.getElementById('hdrBtn').innerHTML=ic('rows')+' Rows';
 document.getElementById('slBtn').innerHTML=ic('sliders')+' Sliders';
+document.getElementById('helpBtn').innerHTML=ic('help')+' Help';
 document.getElementById('setBtn').innerHTML=ic('gear');
+document.getElementById('hdrBtn').classList.toggle('toggledOn',!document.body.classList.contains('hideHeaders'));
+document.getElementById('slBtn').classList.toggle('toggledOn',!settings.slidersHidden);
 
 function buildDemoTabs(){
   for(const t of tabs) for(const v of t.views) if(v.panel) v.panel.remove();
@@ -3095,6 +3230,11 @@ buildDemoTabs();
 setActiveProject('Demo');
 renderTabbar();
 requestAnimationFrame(()=>rebuild());
+function showWhatsNewOnce(){
+  if(store.get(LS_WHATSNEW)===APP_VERSION) return;
+  store.set(LS_WHATSNEW,APP_VERSION);
+  openWhatsNewModal();
+}
 (async function boot(){
   let ok=false;
   const h=location.hash||'';
@@ -3113,6 +3253,7 @@ requestAnimationFrame(()=>rebuild());
       }catch(e){}
     }
   }
+  showWhatsNewOnce();
   if(midiIn.inId&&navigator.requestMIDIAccess){ midiInEnable().catch(()=>{}); }
   if(midi.outId&&navigator.requestMIDIAccess){ midiEnable().catch(()=>{}); }
 })();
