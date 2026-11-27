@@ -82,6 +82,7 @@ body.hideSliders .vhbar{display:none;}
 #interval{flex:none;color:var(--accent2);font-family:monospace;max-width:48%;overflow:hidden;text-overflow:ellipsis;}
 #interval .dim{opacity:.62;}
 #readout{flex:none;color:#ffd700;font-family:monospace;}
+#oscScope{position:absolute;right:10px;bottom:10px;width:280px;height:110px;background:rgba(11,16,24,.78);border:1px solid #2b3648;border-radius:8px;display:none;pointer-events:none;z-index:6}
 #modalBack{position:fixed;top:0;left:0;right:0;bottom:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:50;}
 #modalBack.open{display:flex;}
 #modalBox{background:var(--panel);border:1px solid #2b3648;border-radius:12px;padding:16px;width:min(560px,94vw);max-height:88vh;overflow:auto;box-shadow:0 12px 44px #000c;}
@@ -162,7 +163,7 @@ body.hideSliders .vhbar{display:none;}
 <body>
 
 <div id="toolbar">
-  <div id="brand"><span id="brandSvg"></span><div class="btxt"><b>ISOCTA</b><span>SCALELAB · V21.3</span></div></div>
+  <div id="brand"><span id="brandSvg"></span><div class="btxt"><b>ISOCTA</b><span>SCALELAB · V22.0</span></div></div>
   <span id="projName" class="dim" title="Current project — click to open Projects">unsaved</span>
   <input type="text" id="saveName" placeholder="project name…" spellcheck="false">
   <div class="tbsep"></div>
@@ -173,10 +174,11 @@ body.hideSliders .vhbar{display:none;}
   <div class="tbsep"></div>
   <button class="accent" id="addRow" title="Add a row to the last view of this tab"></button>
   <button id="addView" title="Add a new view to this tab (independent frequency range)"></button>
-  <button id="spawnBtn" title="Arm: next key pressed spawns a new row from that frequency"></button>
+  <button id="spawnBtn" title="Arm toolbar spawn template: next key pressed spawns a row from that frequency"></button>
   <button id="assignBtn" title="Toggle key-assignment mode (keyboard letters or MIDI notes)"></button>
   <button id="hdrBtn" title="Show/hide row headers"></button>
   <button id="slBtn" title="Show/hide view sliders"></button>
+  <button id="oscBtn" title="Show/hide oscilloscope"></button>
   <button id="helpBtn" title="Help and what's new"></button>
   <button id="setBtn" title="Global settings"></button>
   <span id="susLed" title="Sustain — hold Shift, or tap to latch">SUS</span>
@@ -186,7 +188,7 @@ body.hideSliders .vhbar{display:none;}
 
 <div id="main">
   <div id="headers"><div class="colTitle">R O W S</div><div id="headersInner"></div><div id="dropLine"></div><div id="hdrResize" title="Drag to resize header column"></div></div>
-  <div id="cvwrap"><div id="viewStack"></div></div>
+  <div id="cvwrap"><div id="viewStack"></div><canvas id="oscScope"></canvas></div>
   <div id="vbar"><div id="vthumb"></div></div>
 </div>
 <div id="statusBar"><span id="hint"></span><span id="interval"></span><span id="readout"></span></div>
@@ -209,6 +211,7 @@ const ICONS={
  sliders:'<path d="M4 7h16M4 17h16"/><circle cx="10" cy="7" r="2.2"/><circle cx="15" cy="17" r="2.2"/>',
  zoomIn:'<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M8 11h6M11 8v6"/>',
  zoomOut:'<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M8 11h6"/>',
+ scope:'<path d="M3 12h3l2-5 3 10 2-6 2 3h6"/><path d="M3 4h18M3 20h18"/>',
  chevsL:'<path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/>',
  chevsR:'<path d="m13 17 5-5-5-5M6 17l5-5-5-5"/>',
  ruler:'<rect x="2" y="8.5" width="20" height="7" rx="1"/><path d="M6.5 8.5v3M10.5 8.5v3M14.5 8.5v3M18.5 8.5v3"/>',
@@ -224,7 +227,8 @@ const LOGO=`<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke-w
 
 const settings = { A4: 440, grid: true, padLabels: true, vBias: 0.5,
   fftOn: true, fftSize: 16384, cursor: true, cursorHarm: true,
-  haloOn: true, haloCents: 50, centDigits: 1, slidersHidden: false };
+  haloOn: true, haloCents: 50, centDigits: 1, slidersHidden: false,
+  oscOn: false, oscTrigger: 'zero' };
 function defaultParts(){ return [1,2,3,4,5,6,7,8].map(n=>({r:n,g:+(1/n).toFixed(3),d:0})); }
 const synth = { wave:'triangle', a:0.01, d:0.12, s:0.7, r:0.3, vol:0.6, partials:defaultParts() };
 const midi = { access:null, out:null, enabled:false, outId:'', bendRange:48, mono:false, monoCh:1,
@@ -235,7 +239,7 @@ const rulerH = 30, HBH = 30, MINSPAN = 0.2, MINBODY = 36, TINYH = 14;
 const TOL_F = 2.5e-5;
 const EXACT_C = TOL_F*1200;
 const NEAR_C = 1;
-const APP_VERSION='21.4';
+const APP_VERSION='22.0';
 const LS_WHATSNEW='isocta.scalelab.whatsnew';
 /* tabs → views → rows. `views` is a live alias of the ACTIVE tab's views;
    row/group refs resolve across ALL tabs. */
@@ -250,7 +254,10 @@ let totalStackH = 0;
 const view = { yScroll: 0 };
 let playTick = 0;
 let vseq = 0;
+let voiceOrder = 0;
 const noteHist = [];
+const bindingActive = new Map();
+let spawnTemplate = null;
 
 function mkView(o){ return Object.assign({ id:'view'+(++vidSeq), xMin:Math.log2(90), xMax:Math.log2(1600), rows:[] }, o); }
 function mkTab(name){ return { id:'tab'+(++tabSeq), name:name||('Tab '+tabSeq), views:[mkView({})], scr:0 }; }
@@ -265,6 +272,24 @@ function mkRow(o){ return Object.assign({
   mute:false, wave:'', partials:null, adsr:{a:null,d:null,s:null,r:null},
   height:95, lastFreq:null, lastExpr:null, _lt:0, _ast:null, _astSrc:null, _f0:null, _err:null
 }, o); }
+function rowTemplateFrom(row){
+  const adsr=row.adsr||{};
+  return {
+    type:row.type, groups:row.groups, ratiosTxt:row.ratiosTxt, repeatOct:row.repeatOct,
+    etDiv:row.etDiv, amax:row.amax, subs:row.subs, yCurve:row.yCurve, hdiv:row.hdiv,
+    colMix:row.colMix, color:row.color, usePat:row.usePat, patLen:row.patLen, pat:row.pat, patOp:row.patOp,
+    mute:row.mute, wave:row.wave, partials:row.partials?row.partials.map(p=>({...p})):null,
+    adsr:{a:adsr.a??null,d:adsr.d??null,s:adsr.s??null,r:adsr.r??null}, height:row.height
+  };
+}
+function ensureSpawnTemplate(){
+  if(spawnTemplate) return;
+  spawnTemplate=rowTemplateFrom(mkRow({type:'explicit',ratiosTxt:'3/2',repeatOct:1,label:'',groups:'',expr:'C4'}));
+}
+function rowFromTemplate(expr){
+  ensureSpawnTemplate();
+  return mkRow(Object.assign({},rowTemplateFrom(spawnTemplate),{expr}));
+}
 function yScaleOf(){ return Math.pow(1000, 1 - 2*settings.vBias); }
 const gcd=(a,b)=>b?gcd(b,a%b):a;
 const clamp01=x=>Math.max(0,Math.min(1,x));
@@ -923,7 +948,7 @@ function startVoice(key,f,row){
     const o=actx.createOscillator(); o.type=wv; o.frequency.value=f;
     o.connect(g); o.start(); oscs.push(o);
   }
-  voices.set(key,{oscs,g,f,logf:Math.log2(f),row,sus:false});
+  voices.set(key,{oscs,g,f,logf:Math.log2(f),row,sus:false,ord:++voiceOrder});
   noteHist.push({f}); if(noteHist.length>8) noteHist.shift();
   midiNoteOn(key,f);
 }
@@ -951,7 +976,11 @@ function releaseVoice(key){
   if(v&&sustainOn){ v.sus=true; drawAll(); updateReadout(); }
   else stopVoice(key);
 }
-function releaseAll(){ for(const k of [...voices.keys()]) stopVoice(k,true); drawAll(); updateReadout(); }
+function releaseAll(){
+  for(const k of [...voices.keys()]) stopVoice(k,true);
+  bindingActive.clear();
+  drawAll(); updateReadout();
+}
 
 /* ================= MIDI out ================= */
 async function midiEnable(){
@@ -1053,7 +1082,8 @@ function midiInPlayOn(note){
   if(assignMode){
     if(!pendingPad) return;
     const fixed=pendingShift?pendingPad.f:null;
-    bindings.set(key,{rowId:pendingPad.row.id,mult:pendingPad.mult,fixed});
+    bindings.set(key,{rowId:pendingPad.row.id,mult:pendingPad.mult,fixed,
+      seq:[{rowId:pendingPad.row.id,mult:pendingPad.mult,fixed}]});
     hint('Bound MIDI ♪'+midiName(note)+' ('+note+') → '+(fixed!=null?('fixed '+fmtHz(fixed)+' Hz (ruler pin)'):
       (pendingPad.row.id+' · follows f₀')));
     pendingPad=null; pendingShift=false; rebuild();
@@ -1061,19 +1091,9 @@ function midiInPlayOn(note){
   }
   const b=bindings.get(key); if(!b) return;
   ensureAudio();
-  if(b.fixed!=null){
-    startVoice(key,b.fixed,null);
-    drawAll(); updateReadout(); return;
-  }
-  const r=findRow(b.rowId);
-  if(r&&r._f0){
-    const f=r._f0*b.mult;
-    touchRow(r,f,'*'+b.mult);
-    if(!r.mute) startVoice(key,f,r);
-    drawAll(); scheduleGeom(); updateReadout();
-  }
+  playBinding(key,b);
 }
-function midiInPlayOff(note){ releaseVoice('m'+note); }
+function midiInPlayOff(note){ releaseBinding('m'+note); }
 
 /* ================= core rebuild ================= */
 let geomQueued=false;
@@ -1088,10 +1108,8 @@ function nearestNoteStr(f){
   const name=midiName(m);
   return c===0? name : name+(c>0?'+':'−')+Math.abs(c).toFixed(d)+'¢';
 }
-function intervalText(){
-  if(noteHist.length<2) return '';
+function formatIntervalPair(f1,f2){
   const d=CD();
-  const f1=noteHist[noteHist.length-2].f, f2=noteHist[noteHist.length-1].f;
   const dc=1200*Math.log2(f2/f1);
   const dir=dc>0.5?'↑':dc<-0.5?'↓':'=';
   const ac=Math.abs(dc);
@@ -1109,18 +1127,22 @@ function intervalText(){
   const ratio=Math.max(f1,f2)/Math.min(f1,f2);
   const frac=approxFraction(ratio);
   const ratioS=frac?`${frac.n}/${frac.d}`:'';
-  const centsS=rc.toFixed(d)+'c'+(oct?`+${oct}oct`:'');
+  const centsS=rc.toFixed(d)+'¢'+(oct?`+${oct}oct`:'');
+  const ratioCents = ratioS ? `${ratioS} (${centsS})` : centsS;
   const left=`${escHtml(nearestNoteStr(f1))}→${escHtml(nearestNoteStr(f2))} ${dir}`;
   if(exact){
-    const rhs=ratioS?`${ratioS} = ${centsS}`:centsS;
-    return `${left} ${rhs} = ${escHtml(name)}`;
+    return {short:ratioCents,long:`${left} ${ratioCents} = ${escHtml(name)}`};
   }
   const offR=+off.toFixed(d);
   const offS=(Math.abs(offR)<Math.pow(10,-d)/2?'±0':(offR>0?'+':'−')+Math.abs(offR).toFixed(d));
-  const rhs=ratioS?`${ratioS} = ${centsS}`:centsS;
   const showBestRatio=!ratioS||best.ratio!==ratioS;
   const approxLabel=showBestRatio?`${name} (${best.ratio})`:name;
-  return `${left} ${rhs} <span class="dim">≈ ${escHtml(approxLabel)} ${offS}c</span>`;
+  return {short:ratioCents,long:`${left} ${ratioCents} <span class="dim">≈ ${escHtml(approxLabel)} ${offS}c</span>`};
+}
+function intervalText(){
+  if(noteHist.length<2) return '';
+  const f1=noteHist[noteHist.length-2].f, f2=noteHist[noteHist.length-1].f;
+  return formatIntervalPair(f1,f2).long;
 }
 function ensureViewDom(v){
   if(v.panel) return;
@@ -1272,14 +1294,19 @@ function rebuild(){
   }
   padChar.clear();
   for(const [ch,b] of [...bindings]){
-    if(b.fixed!=null) continue;
-    if(!findRow(b.rowId)){ bindings.delete(ch); continue; }
-    const k=b.rowId+'|'+b.mult;
-    if(!padChar.has(k)) padChar.set(k,[]);
-    padChar.get(k).push(bindLabel(ch));
+    const seq=(Array.isArray(b.seq)&&b.seq.length)?b.seq:[b];
+    for(const s of seq){
+      if(s.fixed!=null) continue;
+      if(!findRow(s.rowId)){ bindings.delete(ch); continue; }
+      const k=s.rowId+'|'+s.mult;
+      if(!padChar.has(k)) padChar.set(k,[]);
+      if(!padChar.get(k).includes(bindLabel(ch))) padChar.get(k).push(bindLabel(ch));
+    }
   }
   document.getElementById('slBtn').classList.toggle('toggledOn',!settings.slidersHidden);
   document.getElementById('hdrBtn').classList.toggle('toggledOn',!document.body.classList.contains('hideHeaders'));
+  document.getElementById('oscBtn').classList.toggle('toggledOn',!!settings.oscOn);
+  document.getElementById('oscScope').style.display=settings.oscOn?'block':'none';
   layoutHeaders(); updateBars(); drawAll(); updateReadout();
   scheduleAutosave();
 }
@@ -1525,6 +1552,42 @@ function drawCursorLine(ctx,x,color,alpha,top,bottom){
   ctx.strokeStyle=color; ctx.lineWidth=1.75;
   ctx.beginPath(); ctx.moveTo(x,top); ctx.lineTo(x,bottom); ctx.stroke();
 }
+function drawChordIntervals(v){
+  if(voices.size<2) return;
+  const pts=[...voices.values()].map(vv=>({f:vv.f,x:xToPxV(v,Math.log2(vv.f))}))
+    .filter(p=>p.x>=0&&p.x<=v.W).sort((a,b)=>a.x-b.x);
+  if(pts.length<2) return;
+  const ctx=v.ctx;
+  let lane=0;
+  for(let i=0;i<pts.length;i++){
+    for(let j=i+1;j<pts.length;j++){
+      const a=pts[i], b=pts[j];
+      const span=b.x-a.x;
+      if(span<18) continue;
+      const y0=v.rh+10+((lane++)%4)*11;
+      const peak=Math.max(v.rh+3,y0-Math.min(40,12+span*0.12));
+      const cx=(a.x+b.x)/2;
+      ctx.save();
+      ctx.strokeStyle='rgba(255,255,255,.42)';
+      ctx.lineWidth=1.15;
+      ctx.beginPath();
+      ctx.moveTo(a.x,y0);
+      ctx.quadraticCurveTo(cx,peak,b.x,y0);
+      ctx.stroke();
+      const t=formatIntervalPair(a.f,b.f).short;
+      ctx.font='10px monospace';
+      ctx.fillStyle='rgba(10,12,20,.72)';
+      const tw=Math.min(150,Math.max(42,ctx.measureText(t).width+8));
+      const tx=cx-tw/2, ty=peak-11;
+      ctx.fillRect(tx,ty,tw,11);
+      ctx.textAlign='center';
+      ctx.textBaseline='top';
+      ctx.fillStyle='rgba(255,255,255,.88)';
+      ctx.fillText(t,cx,ty+1);
+      ctx.restore();
+    }
+  }
+}
 function drawView(v){
   if(!v.W||!v.H) return;
   const W=v.W,H=v.H,rh=v.rh;
@@ -1617,6 +1680,7 @@ function drawView(v){
       }
     }
   }
+  drawChordIntervals(v);
   const drawn=new Uint8Array(v.pts.length);
   if(v.hasMulti){
     for(const members of v.grpMembers.values()){
@@ -1720,8 +1784,64 @@ function drawRulerPins(v){
   }
 }
 let fftFrame=0;
+function oscAnchorFreq(){
+  if(!voices.size) return null;
+  const arr=[...voices.values()].sort((a,b)=>a.ord-b.ord);
+  if(settings.oscTrigger==='first') return arr[0].f;
+  if(settings.oscTrigger==='last') return arr[arr.length-1].f;
+  return null;
+}
+function drawOscilloscope(){
+  const cv=document.getElementById('oscScope');
+  if(!cv) return;
+  if(!settings.oscOn||!analyser||!actx){ cv.style.display='none'; return; }
+  cv.style.display='block';
+  const w=cv.clientWidth, h=cv.clientHeight;
+  if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
+  const ctx=cv.getContext('2d');
+  const data=new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(data);
+  let start=0;
+  let win=Math.floor(data.length*0.5);
+  const af=oscAnchorFreq();
+  const crosses=[];
+  for(let i=0;i<data.length-1;i++) if(data[i]<=0&&data[i+1]>0) crosses.push(i);
+  if(crosses.length) start=crosses[0];
+  if(af){
+    const cyc=Math.max(40,Math.round(actx.sampleRate/af));
+    win=Math.max(80,Math.min(data.length-2,cyc*3));
+    if(crosses.length>1){
+      let bi=0, bd=Infinity;
+      for(let i=0;i<crosses.length-1;i++){
+        const d=Math.abs((crosses[i+1]-crosses[i])-cyc);
+        if(d<bd){ bd=d; bi=i; }
+      }
+      start=crosses[bi];
+    }
+  }
+  if(start+win>=data.length) start=Math.max(0,data.length-win-1);
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle='rgba(7,10,15,.92)';
+  ctx.fillRect(0,0,w,h);
+  ctx.strokeStyle='rgba(80,95,120,.55)';
+  ctx.beginPath(); ctx.moveTo(0,h/2+.5); ctx.lineTo(w,h/2+.5); ctx.stroke();
+  ctx.strokeStyle='rgba(79,209,224,.95)';
+  ctx.lineWidth=1.5;
+  ctx.beginPath();
+  for(let i=0;i<win;i++){
+    const x=i/(win-1)*w;
+    const y=h*(0.5-data[start+i]*0.42);
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  ctx.fillStyle='rgba(170,190,220,.85)';
+  ctx.font='10px monospace';
+  const lbl=settings.oscTrigger==='zero'?'zero':'note';
+  ctx.fillText('scope: '+lbl,8,8);
+}
 function fftLoop(){
   requestAnimationFrame(fftLoop);
+  drawOscilloscope();
   if(document.hidden||!settings.fftOn||!analyser||!fftData) return;
   if((fftFrame=(fftFrame+1)%3)!==0) return;
   analyser.getFloatFrequencyData(fftData);
@@ -1829,6 +1949,7 @@ function buildHeaderEl(r){
       <div class="rh-btns">
         <button class="bMute" title="Mute"></button>
         <button class="bSpawn" title="Arm: next key pressed spawns a row below this one">${ic('spawn',11)}</button>
+        <button class="bTpl" title="Set toolbar spawn template from this row">Tpl</button>
         <button class="bSet" title="Row settings">${ic('gear',11)}</button>
         <button class="bDel" title="Delete row">${ic('x',11)}</button>
       </div>
@@ -1837,8 +1958,9 @@ function buildHeaderEl(r){
   el._f0v=el.querySelector('.rh-f0'); el._mute=el.querySelector('.bMute');
   el._spawn=el.querySelector('.bSpawn');
   el._mute.onclick=()=>{ r.mute=!r.mute; rebuild(); };
-  el._spawn.onclick=()=>{ spawnArm=(spawnArm&&spawnArm.afterId===r.id)?null:{afterId:r.id};
+  el._spawn.onclick=()=>{ spawnArm=(spawnArm&&spawnArm.mode==='row'&&spawnArm.afterId===r.id)?null:{afterId:r.id,mode:'row'};
     refreshArmUI(); };
+  el.querySelector('.bTpl').onclick=()=>{ spawnTemplate=rowTemplateFrom(r); hint('Toolbar spawn template set from '+r.id); };
   el.querySelector('.bSet').onclick=()=>openRowModal(r);
   el._lab.ondblclick=()=>openRowModal(r);
   el.querySelector('.bDel').onclick=()=>deleteRow(r);
@@ -1931,6 +2053,42 @@ function pressPad(pt,vkey){
   scheduleGeom();
   updateReadout();
 }
+function bindingTargets(b){
+  const seq=(Array.isArray(b.seq)&&b.seq.length)?b.seq:[b];
+  const out=[];
+  for(const s of seq){
+    if(s.fixed!=null){
+      if(s.fixed>0&&isFinite(s.fixed)) out.push({row:null,f:s.fixed,mult:1,suffix:''});
+      continue;
+    }
+    const row=findRow(s.rowId);
+    if(!row||!row._f0) continue;
+    const mult=(isFinite(s.mult)&&s.mult>0)?s.mult:1;
+    out.push({row,f:row._f0*mult,mult,suffix:'*'+mult});
+  }
+  return out;
+}
+function playBinding(baseKey,b){
+  for(const vk of (bindingActive.get(baseKey)||[])) releaseVoice(vk);
+  const targets=bindingTargets(b);
+  if(!targets.length){ drawAll(); updateReadout(); return; }
+  const ids=[];
+  let i=0;
+  for(const t of targets){
+    const vk=targets.length===1?baseKey:(baseKey+':'+(++i));
+    ids.push(vk);
+    if(t.row){
+      touchRow(t.row,t.f,t.suffix);
+      if(!t.row.mute) startVoice(vk,t.f,t.row);
+    } else startVoice(vk,t.f,null);
+  }
+  bindingActive.set(baseKey,ids);
+  drawAll(); scheduleGeom(); updateReadout();
+}
+function releaseBinding(baseKey){
+  for(const vk of (bindingActive.get(baseKey)||[])) releaseVoice(vk);
+  bindingActive.delete(baseKey);
+}
 function wireCanvasInput(v){
   const cvEl=v.cv;
   cvEl.addEventListener('pointerdown',e=>{
@@ -1975,13 +2133,23 @@ function wireCanvasInput(v){
 }
 
 function doSpawn(pt,absolute){
-  const src=pt.row;
-  const raw='('+src.expr+')'+(pt.spawn||'');
+  const rowSpawn=!!(spawnArm&&spawnArm.mode==='row');
+  const src=rowSpawn?(findRow(spawnArm.afterId)||pt.row):pt.row;
+  const ratio=(src&&src._f0)?(pt.f/src._f0):1;
+  const raw=rowSpawn?('('+src.expr+')*'+fmtNum(ratio)):('('+src.expr+')'+(pt.spawn||''));
   let expr;
   try{ expr=absolute? simplifyAbsolute(raw) : simplifyText(raw); }
   catch(e){ expr=raw; }
-  const nr=mkRow({ label:(src.label||src.id)+' '+(pt.label==='1'?'×1':pt.label),
-    expr, type:'harmonic', height:80 });
+  let nr;
+  if(rowSpawn){
+    nr=mkRow(Object.assign({},rowTemplateFrom(src),{
+      expr,
+      label:(src.label||src.id)+' '+(pt.label==='1'?'×1':pt.label)
+    }));
+  }else{
+    nr=rowFromTemplate(expr);
+    nr.label=(src.label||src.id)+' '+(pt.label==='1'?'×1':pt.label);
+  }
   const afterRow=findRow(spawnArm.afterId)||src;
   const vv=viewOfRow(afterRow);
   const idx=vv.rows.indexOf(afterRow);
@@ -1992,8 +2160,12 @@ function doSpawn(pt,absolute){
   rebuild();
 }
 function refreshArmUI(){
-  spawnBtn.classList.toggle('armed',!!(spawnArm&&spawnArm.afterId===null));
-  if(spawnArm) hint(spawnArm.afterId===null?'Spawn armed — tap any pad (Shift = absolute pitch)':'Spawn armed below '+spawnArm.afterId+' — tap any pad (Shift = absolute)');
+  spawnBtn.classList.toggle('armed',!!(spawnArm&&spawnArm.mode==='toolbar'));
+  if(spawnArm){
+    hint(spawnArm.mode==='toolbar'
+      ?'Spawn template armed — tap any pad (Shift = absolute pitch)'
+      :'Spawn row copy armed below '+spawnArm.afterId+' — tap any pad (Shift = absolute)');
+  }
   else hint('');
   rebuild();
 }
@@ -2013,12 +2185,16 @@ document.addEventListener('keydown',e=>{
     if(!pendingPad) return;
     if(k==='Backspace'||k==='Delete'){
       for(const [key,b] of [...bindings])
-        if(b.rowId===pendingPad.row.id&&b.mult===pendingPad.mult) bindings.delete(key);
+        if(
+          (b.rowId===pendingPad.row.id&&b.mult===pendingPad.mult) ||
+          (Array.isArray(b.seq)&&b.seq.some(s=>s.rowId===pendingPad.row.id&&s.mult===pendingPad.mult))
+        ) bindings.delete(key);
       hint('Unbound (letters + MIDI notes on that pad)');
       pendingPad=null; pendingShift=false; rebuild();
     } else if(k.length===1){
       const fixed=(pendingShift||e.shiftKey)?pendingPad.f:null;
-      bindings.set(k,{rowId:pendingPad.row.id,mult:pendingPad.mult,fixed});
+      bindings.set(k,{rowId:pendingPad.row.id,mult:pendingPad.mult,fixed,
+        seq:[{rowId:pendingPad.row.id,mult:pendingPad.mult,fixed}]});
       hint('Bound "'+k.toUpperCase()+'" → '+(fixed!=null?('fixed '+fmtHz(fixed)+' Hz (ruler pin)'):
         (pendingPad.row.id+' · follows f₀')));
       pendingPad=null; pendingShift=false; rebuild();
@@ -2029,22 +2205,12 @@ document.addEventListener('keydown',e=>{
   if(e.repeat||k.length!==1) return;
   const b=bindings.get(k); if(!b) return;
   e.preventDefault(); ensureAudio();
-  if(b.fixed!=null){
-    startVoice('k'+k,b.fixed,null);
-    drawAll(); updateReadout(); return;
-  }
-  const r=findRow(b.rowId);
-  if(r&&r._f0){
-    const f=r._f0*b.mult;
-    touchRow(r,f,'*'+b.mult);
-    if(!r.mute) startVoice('k'+k,f,r);
-    drawAll(); scheduleGeom(); updateReadout();
-  }
+  playBinding('k'+k,b);
 });
 document.addEventListener('keyup',e=>{
   if(e.key==='Shift'){ pendingShift=false; if(assignMode&&pendingPad) drawAll(); shiftSus=false; updateSustain(); }
   const k=e.key.length===1?e.key.toLowerCase():e.key;
-  releaseVoice('k'+k);
+  releaseBinding('k'+k);
 });
 window.addEventListener('blur',()=>{ shiftSus=false; updateSustain(); releaseAll(); });
 
@@ -2126,7 +2292,7 @@ document.getElementById('addView').onclick=()=>{
   views.push(mkView({})); rebuild();
   hint('Added '+views[views.length-1].id+' — drag rows into it via the header column');
 };
-spawnBtn.onclick=()=>{ spawnArm=spawnArm?null:{afterId:null}; refreshArmUI(); };
+spawnBtn.onclick=()=>{ spawnArm=(spawnArm&&spawnArm.mode==='toolbar')?null:{afterId:null,mode:'toolbar'}; refreshArmUI(); };
 function setCanvasCursors(c){ for(const v of views) if(v.cv) v.cv.style.cursor=c; }
 assignBtn.onclick=()=>{
   assignMode=!assignMode; pendingPad=null; pendingShift=false;
@@ -2145,6 +2311,11 @@ document.getElementById('slBtn').onclick=()=>{
   document.body.classList.toggle('hideSliders',settings.slidersHidden);
   document.getElementById('slBtn').classList.toggle('toggledOn',!settings.slidersHidden);
   rebuild();
+};
+document.getElementById('oscBtn').onclick=()=>{
+  settings.oscOn=!settings.oscOn;
+  document.getElementById('oscBtn').classList.toggle('toggledOn',settings.oscOn);
+  document.getElementById('oscScope').style.display=settings.oscOn?'block':'none';
 };
 document.getElementById('helpBtn').onclick=openHelpModal;
 document.getElementById('setBtn').onclick=openGlobalModal;
@@ -2280,7 +2451,7 @@ function openHelpModal(){
    ['Getting started','play','Play & sustain','<h3>Play &amp; sustain</h3><p>Click or touch a pad to sound it. Drag across the canvas to move the voice through adjacent pads; multitouch gives independent fingers and voices. Hold Shift, or tap <b>SUS</b>, to keep released notes alive.</p><p>The pad is determined by the shared Voronoi map, not only by its row. Identical frequencies can merge into one region, while exact-frequency highlights remain visible across rows.</p>'],
    ['Getting started','navigation','Rows, views & scrolling','<h3>Rows, views &amp; scrolling</h3><p>Rows are scale lanes. Tabs contain independently scrollable stacks of views, and each view has its own horizontal frequency range, ruler, and bottom range control.</p><ul><li>Wheel or touchpad over the playing area: scroll vertically.</li><li>Right scrollbar: drag the visible stack position.</li><li>Bottom range bar: drag the range or handles to pan/zoom.</li><li>Row bottom edge: resize. Row left handle: reorder or move between views.</li><li>Collapsed-row run: use the restore button to expand the whole run.</li></ul>'],
    ['Getting started','expressions','Pitch expressions','<h3>Pitch expressions</h3><p>An <b>f₀</b> expression may use notes, arithmetic, cents, row references, or group references: <code>C3*3/2</code>, <code>A4+150c</code>, <code>white/2</code>, or <code>keys</code>. A group resolves to the most recently played pad in any member row, including another tab.</p><p>Cents use 100¢ per equal-tempered semitone. The header and Spawn use the soft expression form to preserve musical ratios; the row editor’s Simplify button deliberately performs a stronger octave/note rewrite.</p>'],
-   ['Getting started','spawn','Spawn & assign','<h3>Spawn &amp; assign</h3><h4>Spawn</h4><p>Arm Spawn, then press a pad. The new row inherits the source expression plus the pad ratio. A normal spawn remains linked when the source uses a row/group reference; hold Shift for an absolute pitch expression.</p><h4>Assign</h4><p>Arm Assign, select a pad, then press a computer key or a MIDI note. Normal bindings follow the row as f₀ changes. Hold Shift to create a fixed-Hz binding and ruler pin instead. The Bindings manager can retarget, convert, or delete bindings.</p>'],
+   ['Getting started','spawn','Spawn & assign','<h3>Spawn &amp; assign</h3><h4>Spawn</h4><p>The toolbar Spawn uses a template row (type/scale/sound/pattern) and only replaces f₀ from the clicked pad ratio. Use a row&rsquo;s <b>Tpl</b> button (eyedropper workflow) to copy that row into the toolbar template.</p><p>Row-header Spawn creates a shifted copy of that specific row instead. Hold Shift while spawning to force absolute-pitch simplification.</p><h4>Assign</h4><p>Arm Assign, select a pad, then press a computer key or a MIDI note. Normal bindings follow the row as f₀ changes. Hold Shift to create a fixed-Hz binding and ruler pin instead. In the Bindings manager, a single trigger can play a sequence/chord using <code>row*ratio, row*ratio, =440</code>.</p>'],
    ['Getting started','projects','Projects & sharing','<h3>Projects &amp; sharing</h3><p><b>Save</b> stores named projects in this browser and thumbnails their current canvas. <b>Load</b> opens the project browser. <b>New</b> starts a small blank scene.</p><p><b>Share</b> compresses the workspace into a URL fragment. Settings also provides raw JSON export/import and the project browser supports files. The automatic session restore is separate from named saves.</p>'],
    ['Row settings','roweditor','Overview','<h3>Row settings overview</h3><p>Open a row by double-clicking its label or pressing its gear button. Edit the ID, label, comma-separated group memberships, f₀ expression, scale type, mute state, colours, and per-row synthesis.</p><p>An empty label displays the row ID. A muted row is still playable and still updates its last frequency, so it can be a silent tuning/controller source for rows that reference it.</p>'],
    ['Row settings','harmonic','Harmonic ladder','<h3>Harmonic ladder</h3><p>The ladder places integer multiples above f₀ and their reciprocal ratios below it: <code>×1, ×2, ×3…</code> and <code>÷2, ÷3…</code>.</p><h4>Fineness 1/n</h4><p>Fineness inserts subdivisions without creating an expanding hole around the root. For 1/2, the sequence is <code>×1, ×3/2, ×2, ×5/2…</code>, mirrored as <code>÷3/2, ÷2, ÷5/2…</code>. This is useful for overtone-series studies and for instrument/fingering demonstrations.</p>'],
@@ -2291,7 +2462,7 @@ function openHelpModal(){
    ['Row settings','links','Links & repetition','<h3>Links &amp; repetition</h3><p>Rows can reference another row ID or a group in f₀. The result is the referenced row’s/group’s last-played pitch, so muted controller rows can retune an entire instrument.</p><p>Group names are comma-separated memberships. Group references work across tabs. Renaming a row updates expressions and bindings; deleting a row substitutes its f₀ expression where possible. Explicit-ratio rows have a separate octave repeat control, so repeated scale copies need not be typed manually.</p>'],
    ['Row settings','rowsound','Per-row sound','<h3>Per-row sound</h3><p>By default a row inherits the global synthesizer. Enabling Custom sound supplies a waveform and ADSR envelope for that row.</p><p>The custom-partial editor creates additive sine components at arbitrary ratios to f₀. Each partial has gain and an optional decay: ratios can be integer harmonics or irrational numbers for bell/rod-like spectra. Saw, square, triangle, bell, rod, and other presets provide starting points.</p>'],
    ['Global settings','tuning','Tuning & synth','<h3>Tuning &amp; global synth</h3><h4>A4 reference</h4><p>A4 sets the absolute conversion for note names, 12-TET annotations, and frequency labels. Changing it retunes note-name expressions without changing ratio-only arithmetic.</p><h4>Default sound</h4><p>Wave, partials, volume, and ADSR provide the inherited instrument for rows without overrides. Attack/decay/release are seconds/ms controls; sustain is a percentage level. Custom partial ratios and decays are per-component, not forced to integer harmonics.</p>'],
-   ['Global settings','visual','Spectrum & guides','<h3>Spectrum &amp; guides</h3><p>The FFT is drawn behind the 12-TET ruler using the active view’s logarithmic frequency range. Larger FFT sizes give better low-frequency precision but update more slowly.</p><ul><li><b>Freq cursor:</b> a vertical line at every sounding fundamental.</li><li><b>Partials:</b> optional differently coloured lines for the actual sounding partials.</li><li><b>Halo:</b> shows nearby pad frequencies out to a cents radius, separately from exact matches.</li><li><b>Voronoi bias:</b> changes the importance of vertical vs horizontal distance when partitioning pads.</li><li><b>Cents digits:</b> controls display precision; entering c or ¢ works in fields.</li></ul>'],
+   ['Global settings','visual','Spectrum & guides','<h3>Spectrum &amp; guides</h3><p>The FFT is drawn behind the 12-TET ruler using the active view’s logarithmic frequency range. Larger FFT sizes give better low-frequency precision but update more slowly.</p><ul><li><b>Freq cursor:</b> a vertical line at every sounding fundamental.</li><li><b>Partials:</b> optional differently coloured lines for the actual sounding partials.</li><li><b>Halo:</b> shows nearby pad frequencies out to a cents radius, separately from exact matches.</li><li><b>Voronoi bias:</b> changes the importance of vertical vs horizontal distance when partitioning pads.</li><li><b>Oscilloscope:</b> togglable scope with zero-crossing, first-note, and last-note triggers.</li><li><b>Cents digits:</b> controls display precision; entering c or ¢ works in fields.</li></ul>'],
    ['Global settings','midiout','MIDI output','<h3>MIDI output</h3><p>MIDI pitch is nominally 12-TET, and pitch bend is a <em>channel-wide</em> controller. If two simultaneous notes use different microtonal bends, one shared channel would move both notes. MPE mode therefore allocates a fresh channel to each live note (channels 2–16), so every note can carry its own note number and bend.</p><p><b>Bend range</b> must match the receiving synth’s range. Larger ranges permit wider microtonal and glissando excursions, but reduce bend resolution. If the receiver has only conventional monophonic MIDI, use Monophonic mode and choose the hardware’s listening channel; notes are legato and bend is shared, as a last-resort approximation.</p>'],
    ['Global settings','midiin','MIDI input & bindings','<h3>MIDI input &amp; bindings</h3><p>Choose an input and an incoming channel (or Omni). In Assign mode, select a pad and play a MIDI key to bind that note exactly like a computer letter. A normal binding follows the target row as it retunes; Shift makes it fixed frequency.</p><p>This supports controller workflows: bind a MIDI note to a muted root pad, reference that pad from another row, then bind a second register of notes to pads on the follower row. The first note silently retunes the follower, while the others perform on it.</p><p>MIDI input bindings and MIDI output targets are independent choices, so the same hardware can be used for input, output, or split roles on different channels.</p>'],
    ['Global settings','other','Bindings & workspace','<h3>Bindings &amp; workspace</h3><p>The Bindings manager lists keyboard and MIDI bindings. Follow bindings store the target row and multiplier; fixed bindings store an absolute frequency and pin it to the ruler.</p><p>Workspace export/import carries settings, rows, tabs, views, bindings, and synth state. The Voronoi, spectrum, and interface settings are part of the workspace rather than the synthesis engine itself.</p>']
@@ -2320,6 +2491,7 @@ function openHelpModal(){
 
 function openWhatsNewModal(){
   const releases=[
+   ['21.4','Interval/readout & cloud polish',['Interval readout gained reduced rational ratios with cents+octave formatting and exact-vs-approx naming.','Cloud Y-curve edits refresh the canvas while editing row settings.','Custom partial preset controls and cloud a-max quick presets were refined.']],
    ['21.3','Help & navigation refresh',['Help moved to a responsive two-pane topic tree with focused Row Settings and Global Settings sections.','Added MIDI output rationale for channel-per-note pitch bend behavior.','Expanded row documentation coverage and improved wheel/touchpad vertical scrolling controls.','Rows and Sliders toolbar toggles now show enabled state.']],
    ['20','MIDI & controller polish',['Added MIDI input assignment for triggering pads from external controllers.','Added MIDI output device selection and configurable monophonic channel.','Preserved assignments when row IDs are renamed.']],
    ['19','Tabs, projects & sharing',['Added tabs containing independent stacks of views, with row/group references across tabs.','Added New/Save/Load, autosave, browser project thumbnails, JSON files, and compressed share URLs.']],
@@ -2345,11 +2517,12 @@ function openWhatsNewModal(){
   openModal(`<div class="newsShell"><h2>What's new in ScaleLab v${APP_VERSION}</h2>
   <div class="releaseScroll">
     <ul class="releaseList">
-      <li><b>Interval readout upgrade</b> — Rational intervals now show reduced ratios and cents+octave form (for example 64/7 and 231.2c+2oct), with exact named matches displayed using equals.</li>
-      <li><b>Smarter interval naming</b> — Exact chromatic and exact rational matches now resolve as exact names, while approximate names are shown dimmer.</li>
-      <li><b>Cloud editing polish</b> — Harmonic-cloud Y-curve changes now refresh the canvas live while editing.</li>
-      <li><b>Layout refinements</b> — Row resizing no longer has a hard maximum height, and custom-partial preset buttons are now arranged side by side.</li>
-      <li><b>Cloud defaults</b> — New harmonic-cloud rows now default a max to 32, with one-click a max presets (16/32/64/128/256).</li>
+      <li><b>Chord sequences for bindings</b> — Keyboard/MIDI bindings can now target note sequences/chords from one trigger using a row*ratio list.</li>
+      <li><b>Chord interval overlays</b> — Active chords now draw interval spans between every note pair on the canvas, and interval text now uses ratio-plus-cents style (for example 16/15 (111.7c)).</li>
+      <li><b>Spawn-template workflow</b> — Toolbar spawn now uses a dedicated template (set via row eyedropper), while per-row spawn creates shifted copies of that row.</li>
+      <li><b>Oscilloscope tool</b> — Added a togglable scope with trigger modes for zero-crossing, first-note, or last-note reference.</li>
+      <li><b>Row editor live preview</b> — Row-setting changes now update the canvas immediately; Save confirms and Cancel fully restores the original row.</li>
+      <li><b>Preset UI fix</b> — Custom-partial preset buttons were restored in global and row sound editors while preserving horizontal a-max presets.</li>
     </ul>
     <div class="mhelp" style="margin-left:18px">This latest release note is shown once for each ScaleLab version.</div>
     <section class="releaseHistory"><h3>Earlier versions</h3>
@@ -2371,7 +2544,7 @@ function partialsHTML(prefix,parts){
      <input type="text" class="${prefix}R pRatio" data-i="${i}" value="${+p.r.toFixed(4)}" spellcheck="false" title="ratio × f₀">
      <input type="text" class="${prefix}D pDecay" data-i="${i}" value="${p.d||''}" placeholder="·" spellcheck="false" title="decay s (blank = sustained)">
    </div>`).join('')+`</div>
-   <span style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:2px;flex:none">
+   <span style="display:flex;flex-wrap:nowrap;align-items:flex-start;gap:2px;flex:none;white-space:nowrap;overflow-x:auto;max-width:100%">
     <button class="${prefix}Add" title="Add partial" style="font-size:.62rem;padding:1px 4px">+</button>
     <button class="${prefix}Del" title="Remove last partial" style="font-size:.62rem;padding:1px 4px">−</button>
     ${Object.keys(PART_PRESETS).map(pr=>`<button class="${prefix}Pre" data-p="${pr}" style="font-size:.58rem;padding:1px 4px">${pr}</button>`).join('')}
@@ -2421,15 +2594,14 @@ function wirePartials(prefix,getParts,setParts,after){
 const PART_HELP='partials = sine at f₀ × ratio · gain 0–100 · decay s (blank = sustained)<br>ratios may be IRRATIONAL (bell, rod…) or expressions · +/− adjusts count';
 
 function openRowModal(r){
+  const orig=JSON.parse(JSON.stringify(r));
   const snd=adsrOverridesOn(r);
   const a0=Math.round((r.adsr.a??synth.a)*1000), d0=Math.round((r.adsr.d??synth.d)*1000),
         s0=Math.round((r.adsr.s??synth.s)*100), r0=Math.round((r.adsr.r??synth.r)*1000);
   const mix0=Math.round((r.colMix||0)*100);
   const po0=Math.round((r.patOp==null?0.85:r.patOp)*100);
   const yc0=Math.round((r.yCurve||1)*100);
-  const origYCurve=r.yCurve||1;
-  let yCurvePreviewed=false;
-  let yCurveCommitted=false;
+  let committed=false;
   let rp=r.partials?r.partials.map(p=>({...p})):defaultParts();
   openModal(`<div class="modalShell"><h2>Row settings — ${r.id}</h2>
   <div class="modalScroll">
@@ -2450,7 +2622,7 @@ function openRowModal(r){
   <div class="mhelp" data-t="harmonic">pads at ratios k/n and n/k, always starting at the fundamental:<br>n=1: ×1, ×2, ×3… /2, /3… · n=2: ×1, ×3/2, ×2, ×5/2… /3/2, /2, /5/2…<br>— finer steps per octave, no growing gap between the two ends</div>
   <div class="frow" data-t="cloud"><label>a max</label>
     <input type="number" id="mAmax" min="1" max="1024" value="${r.amax||32}" style="max-width:88px;flex:none">
-    <span style="display:inline-flex;gap:3px;flex-wrap:wrap;align-items:center">
+    <span style="display:inline-flex;gap:3px;flex-wrap:nowrap;align-items:center;white-space:nowrap">
       ${[16,32,64,128,256].map(v=>`<button type="button" class="mAmaxPre" data-v="${v}" style="font-size:.62rem;padding:1px 5px">${v}</button>`).join('')}
     </span>
   </div>
@@ -2501,6 +2673,7 @@ function openRowModal(r){
   <div class="modalFoot"><div class="merr" id="mErr"></div>
   <div class="mbtns">
     <button id="mDelete" style="margin-right:auto">Delete row</button>
+    <button id="mTpl">Set spawn template</button>
     <button id="mCancel">Cancel</button>
     <button class="accent" id="mSave">Save</button>
   </div></div></div>`,'inner-scroll');
@@ -2508,6 +2681,43 @@ function openRowModal(r){
   const $=id=>document.getElementById(id);
   const syncT=()=>{ const t=$('mType').value;
     modalBody.querySelectorAll('[data-t]').forEach(el=>el.style.display=el.dataset.t===t?'flex':'none'); };
+  const applyPreview=()=>{
+    const err=$('mErr'); err.textContent='';
+    try{
+      const expr=$('mExpr').value;
+      parseExpr(expr);
+      const type=$('mType').value;
+      const ratTxt=$('mRat').value;
+      if(type==='explicit') parseRatios(ratTxt);
+      r.label=$('mLabel').value.trim();
+      r.groups=$('mGroups').value.trim();
+      r.expr=expr; r._astSrc=null;
+      r.type=type;
+      r.etDiv=Math.max(2,Math.min(31,parseInt($('mEt').value)||12));
+      r.hdiv=Math.max(1,Math.min(16,parseInt($('mHdiv').value)||1));
+      r.amax=Math.max(1,Math.min(1024,parseInt($('mAmax').value)||32));
+      r.subs=$('mSubs').checked;
+      r.yCurve=Math.max(0.05,Math.min(5,(+$('mYC').value||100)/100));
+      r.ratiosTxt=ratTxt;
+      r.repeatOct=Math.max(1,parseInt($('mRep').value)||1);
+      r.mute=$('mMute').checked;
+      r.colMix=+$('mMix').value/100;
+      r.color=$('mCol').value;
+      r.usePat=$('mUsePat').checked;
+      r.patLen=Math.max(1,Math.min(64,parseInt($('mPatLen').value)||2));
+      r.patOp=+$('mPatOp').value/100;
+      if(r.usePat){
+        const sw=[...$('mPat').querySelectorAll('.ptSw')];
+        if(sw.length===r.patLen) r.pat=sw.map(c=>c.dataset.v).join('');
+      }
+      if($('mSnd').checked){
+        r.wave=$('mWave').value;
+        r.partials=(r.wave==='custom')?rp.map(p=>({...p})):null;
+        r.adsr={a:+$('mSA').value/1000, d:+$('mSD').value/1000, s:+$('mSS').value/100, r:+$('mSR').value/1000};
+      } else { r.wave=''; r.partials=null; r.adsr={a:null,d:null,s:null,r:null}; }
+      rebuild();
+    }catch(e){ err.textContent=e.message; }
+  };
   const defaultPatLen=()=>{
     const t=$('mType').value;
     if(t==='chromatic') return Math.max(2,Math.min(31,parseInt($('mEt').value)||12));
@@ -2526,12 +2736,12 @@ function openRowModal(r){
       const b=document.createElement('div'); b.className='ptSw';
       b.dataset.v=pat[i]=='1'?'1':'0';
       b.title='tone '+i+(i===0?' (root)':'');
-      b.onclick=()=>{ b.dataset.v=b.dataset.v==='1'?'0':'1'; };
+      b.onclick=()=>{ b.dataset.v=b.dataset.v==='1'?'0':'1'; applyPreview(); };
       box.appendChild(b);
     }
   };
-  $('mType').onchange=syncT;
-  $('mEt').oninput=()=>{ if($('mType').value==='chromatic'&&$('mUsePat').checked){ $('mPatLen').value=defaultPatLen(); renderPat(); } };
+  $('mType').onchange=()=>{ syncT(); applyPreview(); };
+  $('mEt').oninput=()=>{ if($('mType').value==='chromatic'&&$('mUsePat').checked){ $('mPatLen').value=defaultPatLen(); renderPat(); } applyPreview(); };
   $('mUsePat').onchange=e=>{
     const on=e.target.checked;
     $('mPatLenWrap').style.display=on?'inline-flex':'none';
@@ -2541,38 +2751,44 @@ function openRowModal(r){
       if(!(r.usePat&&r.pat&&r.pat.length===cur)) $('mPatLen').value=defaultPatLen();
       renderPat();
     }
+    applyPreview();
   };
-  $('mPatLen').oninput=()=>{ if($('mUsePat').checked) renderPat(); };
-  $('mPatOp').oninput=e=>{ $('mPatOpV').textContent=e.target.value+'%'; };
-  $('mMix').oninput=e=>{ $('mMixV').textContent=e.target.value+'%'; };
+  $('mPatLen').oninput=()=>{ if($('mUsePat').checked) renderPat(); applyPreview(); };
+  $('mPatOp').oninput=e=>{ $('mPatOpV').textContent=e.target.value+'%'; applyPreview(); };
+  $('mMix').oninput=e=>{ $('mMixV').textContent=e.target.value+'%'; applyPreview(); };
   $('mYC').oninput=e=>{
     $('mYCv').textContent=(e.target.value/100).toFixed(2);
-    if($('mType').value==='cloud'){
-      r.yCurve=Math.max(0.05,Math.min(5,(+e.target.value||100)/100));
-      yCurvePreviewed=true;
-      rebuild();
-    }
+    applyPreview();
   };
-  $('mSnd').onchange=e=>{ $('mSndBox').style.display=e.target.checked?'block':'none'; };
+  $('mSnd').onchange=e=>{ $('mSndBox').style.display=e.target.checked?'block':'none'; applyPreview(); };
   $('mWave').onchange=e=>{ $('mRProw').style.display=e.target.value==='custom'?'flex':'none';
-    $('mRPh').style.display=e.target.value==='custom'?'block':'none'; };
+    $('mRPh').style.display=e.target.value==='custom'?'block':'none'; applyPreview(); };
   $('mSimplify').onclick=e=>{ e.preventDefault();
     try{ $('mExpr').value=simplifyHardText($('mExpr').value); }
-    catch(err){ $('mErr').textContent=err.message; } };
-  wirePartials('mRP',()=>rp,ps=>{rp=ps;});
-  ['SA','SD','SS','SR'].forEach(k=>{ $('m'+k).oninput=e=>{ $('m'+k+'v').textContent=e.target.value; }; });
+    catch(err){ $('mErr').textContent=err.message; }
+    applyPreview();
+  };
+  wirePartials('mRP',()=>rp,ps=>{rp=ps;},applyPreview);
+  ['SA','SD','SS','SR'].forEach(k=>{ $('m'+k).oninput=e=>{ $('m'+k+'v').textContent=e.target.value; applyPreview(); }; });
+  ['mLabel','mGroups','mExpr','mHdiv','mAmax','mSubs','mRat','mRep','mMute','mCol'].forEach(id=>{
+    const el=$(id); if(!el) return;
+    const ev=(el.tagName==='TEXTAREA'||el.type==='text'||el.type==='number'||el.type==='color')?'input':'change';
+    el.addEventListener(ev,applyPreview);
+    if(ev!=='change') el.addEventListener('change',applyPreview);
+  });
   syncT();
   if(r.usePat) renderPat();
-  $('mPreset').onchange=e=>{ if(e.target.value) $('mRat').value=PRESETS[e.target.value]; };
-  modalBody.querySelectorAll('.mAmaxPre').forEach(b=>{ b.onclick=e=>{ e.preventDefault(); $('mAmax').value=b.dataset.v; }; });
+  $('mPreset').onchange=e=>{ if(e.target.value) $('mRat').value=PRESETS[e.target.value]; applyPreview(); };
+  modalBody.querySelectorAll('.mAmaxPre').forEach(b=>{ b.onclick=e=>{ e.preventDefault(); $('mAmax').value=b.dataset.v; applyPreview(); }; });
   modalCloseHook=()=>{
-    if(yCurvePreviewed&&!yCurveCommitted&&r.yCurve!==origYCurve){
-      r.yCurve=origYCurve;
-      rebuild();
-    }
+    if(committed) return;
+    Object.assign(r,JSON.parse(JSON.stringify(orig)));
+    r._astSrc=null;
+    rebuild();
   };
+  $('mTpl').onclick=()=>{ spawnTemplate=rowTemplateFrom(r); hint('Toolbar spawn template set from '+r.id); };
   $('mCancel').onclick=closeModal;
-  $('mDelete').onclick=()=>{ deleteRow(r); closeModal(); };
+  $('mDelete').onclick=()=>{ committed=true; deleteRow(r); closeModal(); };
   $('mSave').onclick=()=>{
     const err=$('mErr');
     try{
@@ -2588,7 +2804,10 @@ function openRowModal(r){
       if(nid!==r.id){
         const old=r.id, re=new RegExp('\\b'+old.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','g');
         for(const o of allRows()) if(o!==r){ o.expr=o.expr.replace(re,nid); o._astSrc=null; }
-        for(const [,b] of bindings) if(b.rowId===old) b.rowId=nid;
+        for(const [,b] of bindings){
+          if(b.rowId===old) b.rowId=nid;
+          if(Array.isArray(b.seq)) for(const s of b.seq) if(s.rowId===old) s.rowId=nid;
+        }
         r.id=nid;
       }
       r.label=$('mLabel').value.trim();
@@ -2617,17 +2836,50 @@ function openRowModal(r){
         r.partials=(r.wave==='custom')?readPartialsUI('mRP'):null;
         r.adsr={a:+$('mSA').value/1000, d:+$('mSD').value/1000, s:+$('mSS').value/100, r:+$('mSR').value/1000};
       } else { r.wave=''; r.partials=null; r.adsr={a:null,d:null,s:null,r:null}; }
-      yCurveCommitted=true;
+      committed=true;
       closeModal(); rebuild();
     }catch(e){ err.textContent=e.message; }
   };
 }
 
 function bindingInfo(b){
+  if(Array.isArray(b.seq)&&b.seq.length){
+    return b.seq.map(s=>bindingInfo(s)).join(' · ');
+  }
   const r=findRow(b.rowId);
   const f=b.fixed!=null? b.fixed : (r&&r._f0? r._f0*b.mult : null);
   return b.fixed!=null? 'fixed '+fmtHz(b.fixed)+' Hz'
     : `${b.rowId} ×${(+b.mult).toPrecision(4)}${f? ' ≈ '+fmtHz(f)+' Hz' : ''}`;
+}
+function formatBindingSeq(b){
+  const seq=(Array.isArray(b.seq)&&b.seq.length)?b.seq:[b];
+  return seq.map(s=>s.fixed!=null?('='+fmtNum(s.fixed)):(s.rowId+'*'+fmtNum(s.mult||1))).join(', ');
+}
+function parseBindingSeq(txt,fallback){
+  const raw=txt.split(',').map(s=>s.trim()).filter(Boolean);
+  if(!raw.length) return null;
+  const seq=[];
+  for(const item of raw){
+    if(item.startsWith('=')){
+      const f=parseFloat(item.slice(1));
+      if(!(f>0&&isFinite(f))) return null;
+      seq.push({fixed:f,rowId:'',mult:1});
+      continue;
+    }
+    const m=item.match(/^([A-Za-z]\w*)\*(.+)$/);
+    if(!m) return null;
+    const mult=tryEvalRatio(m[2]);
+    if(mult==null||!(mult>0)) return null;
+    seq.push({rowId:m[1],mult,fixed:null});
+  }
+  if(!seq.length) return null;
+  if(seq.length===1){
+    const s=seq[0];
+    if(s.fixed!=null) return {rowId:fallback.rowId,mult:fallback.mult,fixed:s.fixed,seq:[s]};
+    return {rowId:s.rowId,mult:s.mult,fixed:null,seq:[s]};
+  }
+  const s0=seq[0].fixed!=null?{rowId:fallback.rowId,mult:1,fixed:seq[0].fixed}:seq[0];
+  return {rowId:s0.rowId,mult:s0.mult,fixed:s0.fixed!=null?s0.fixed:null,seq};
 }
 function openBindingsModal(){
   const sortE=([a],[b])=>{
@@ -2649,12 +2901,13 @@ function openBindingsModal(){
         <option value="follow"${b.fixed==null?' selected':''}>follow</option>
         <option value="fixed"${b.fixed!=null?' selected':''}>fixed Hz</option>
       </select>
+      <input type="text" class="bkSeq" value="${formatBindingSeq(b).replace(/"/g,'&quot;')}" spellcheck="false" style="min-width:210px;flex:1" title="Sequence: row*ratio, row*ratio, =440">
       <span class="bkInfo" style="flex:1;font-size:.68rem;color:#9ab;font-family:monospace">${bindingInfo(b)}</span>
       <button class="bkDel" style="flex:none">✕</button>
     </div>`;
   };
   openModal(`<h2>Key bindings</h2>
-  <div class="mhelp" style="margin-left:0">Assign mode: click a pad, press a key OR play a MIDI note = follow row f₀ · Shift held = fixed Hz (ruler pin, global synth).</div>
+  <div class="mhelp" style="margin-left:0">Assign mode: click a pad, press a key OR play a MIDI note = follow row f₀ · Shift held = fixed Hz. Sequence format: row*ratio, row*ratio, =440</div>
   <div id="bkList">${
     list.length? list.map(rowHtml).join('')
     :'<div class="mhelp" style="margin-left:0">No bindings yet — Assign on the canvas.</div>'
@@ -2671,7 +2924,19 @@ function openBindingsModal(){
         const r=findRow(cur.rowId);
         cur.fixed=(r&&r._f0)? r._f0*cur.mult : 440;
       } else cur.fixed=null;
+      cur.seq=[{rowId:cur.rowId,mult:cur.mult,fixed:cur.fixed}];
       info.textContent=bindingInfo(cur); rebuild();
+    };
+    const seqInp=rowEl.querySelector('.bkSeq');
+    seqInp.onchange=()=>{
+      const cur=bindings.get(k); if(!cur) return;
+      const parsed=parseBindingSeq(seqInp.value,cur);
+      if(!parsed){ seqInp.value=formatBindingSeq(cur); seqInp.style.borderColor='var(--danger)';
+        setTimeout(()=>seqInp.style.borderColor='',900); return; }
+      bindings.set(k,parsed);
+      info.textContent=bindingInfo(parsed);
+      typeSel.value=parsed.fixed!=null?'fixed':'follow';
+      rebuild();
     };
     rowEl.querySelector('.bkDel').onclick=()=>{ bindings.delete(k); openBindingsModal(); rebuild(); };
     const keyInp=rowEl.querySelector('.bkKey');
@@ -2768,9 +3033,15 @@ function importWSSafe(txt){
   }
   if(master) master.gain.value=synth.vol*0.9;
   ensureAnalyser();
+  spawnTemplate=d.spawnTemplate?rowTemplateFrom(d.spawnTemplate):spawnTemplate;
+  ensureSpawnTemplate();
   bindings=new Map((d.bindings||[])
     .filter(b=>b&&typeof b.key==='string'&&(b.key.length===1||isMidiBindKey(b.key)))
-    .map(b=>[b.key,{rowId:b.rowId,mult:b.mult,fixed:(typeof b.fixed==='number'&&b.fixed>0)?b.fixed:null}]));
+    .map(b=>[b.key,{
+      rowId:b.rowId,mult:b.mult,fixed:(typeof b.fixed==='number'&&b.fixed>0)?b.fixed:null,
+      seq:Array.isArray(b.seq)?b.seq.filter(s=>s&&((s.rowId&&isFinite(s.mult))||((typeof s.fixed==='number')&&s.fixed>0)))
+        .map(s=>({rowId:s.rowId||'',mult:(+s.mult||1),fixed:(typeof s.fixed==='number'&&s.fixed>0)?s.fixed:null})):null
+    }]));
   pendingPad=null; spawnArm=null; noteHist.length=0; pointers.clear(); releaseAll();
   renderTabbar(); rebuild();
 }
@@ -2786,7 +3057,8 @@ function exportWS(){
       repeatOct:r.repeatOct,etDiv:r.etDiv,amax:r.amax,hdiv:r.hdiv,subs:r.subs,yCurve:r.yCurve,colMix:r.colMix,color:r.color,
       usePat:r.usePat,patLen:r.patLen,pat:r.pat,patOp:r.patOp,mute:r.mute,wave:r.wave,partials:r.partials,
       adsr:r.adsr,height:r.height,lastFreq:r.lastFreq,lastExpr:r.lastExpr})),
-    bindings:[...bindings].map(([key,b])=>({key,rowId:b.rowId,mult:b.mult,fixed:b.fixed}))
+    bindings:[...bindings].map(([key,b])=>({key,rowId:b.rowId,mult:b.mult,fixed:b.fixed,seq:b.seq||null})),
+    spawnTemplate:spawnTemplate?rowTemplateFrom(spawnTemplate):null
   },null,1);
 }
 
@@ -2821,6 +3093,12 @@ function openGlobalModal(){
     <span style="font-size:.75rem;color:#aab;flex:none">FFT</span>
     <select id="mFftSz" style="flex:none">
       ${[2048,4096,8192,16384,32768].map(n=>`<option value="${n}"${settings.fftSize===n?' selected':''}>${n}</option>`).join('')}
+    </select></div>
+  <div class="frow"><label>Oscilloscope</label><input type="checkbox" id="mOsc"${settings.oscOn?' checked':''}>
+    <select id="mOscTrig" style="flex:1">
+      <option value="zero"${settings.oscTrigger==='zero'?' selected':''}>trigger: zero crossing</option>
+      <option value="first"${settings.oscTrigger==='first'?' selected':''}>trigger: first note in chord</option>
+      <option value="last"${settings.oscTrigger==='last'?' selected':''}>trigger: last note in chord</option>
     </select></div>
   <div class="frow"><label>Freq cursor</label><input type="checkbox" id="mCur"${settings.cursor?' checked':''}>
     <span style="font-size:.75rem;color:#aab;flex:none">+ partials</span>
@@ -2884,6 +3162,12 @@ function openGlobalModal(){
   bind('mGV','vol',0.01,'mGVv');
   $('mFft').onchange=e=>{ settings.fftOn=e.target.checked; if(e.target.checked) ensureAnalyser(); drawAll(); };
   $('mFftSz').onchange=e=>{ settings.fftSize=+e.target.value; ensureAnalyser(); };
+  $('mOsc').onchange=e=>{
+    settings.oscOn=e.target.checked;
+    document.getElementById('oscBtn').classList.toggle('toggledOn',settings.oscOn);
+    document.getElementById('oscScope').style.display=settings.oscOn?'block':'none';
+  };
+  $('mOscTrig').onchange=e=>{ settings.oscTrigger=e.target.value; };
   $('mCur').onchange=e=>{ settings.cursor=e.target.checked; drawAll(); };
   $('mCurH').onchange=e=>{ settings.cursorHarm=e.target.checked; drawAll(); };
   $('mHalo').onchange=e=>{ settings.haloOn=e.target.checked; drawAll(); };
@@ -3247,10 +3531,13 @@ spawnBtn.innerHTML=ic('spawn')+' Spawn';
 assignBtn.innerHTML=ic('keys')+' Assign';
 document.getElementById('hdrBtn').innerHTML=ic('rows')+' Rows';
 document.getElementById('slBtn').innerHTML=ic('sliders')+' Sliders';
+document.getElementById('oscBtn').innerHTML=ic('scope')+' Scope';
 document.getElementById('helpBtn').innerHTML=ic('help')+' Help';
 document.getElementById('setBtn').innerHTML=ic('gear');
 document.getElementById('hdrBtn').classList.toggle('toggledOn',!document.body.classList.contains('hideHeaders'));
 document.getElementById('slBtn').classList.toggle('toggledOn',!settings.slidersHidden);
+document.getElementById('oscBtn').classList.toggle('toggledOn',!!settings.oscOn);
+document.getElementById('oscScope').style.display=settings.oscOn?'block':'none';
 
 function buildDemoTabs(){
   for(const t of tabs) for(const v of t.views) if(v.panel) v.panel.remove();
@@ -3302,6 +3589,7 @@ function buildBlankTabs(){
 
 hint('');
 buildDemoTabs();
+ensureSpawnTemplate();
 setActiveProject('Demo');
 renderTabbar();
 requestAnimationFrame(()=>rebuild());
