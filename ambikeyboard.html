@@ -84,6 +84,11 @@ body.hideSliders .vhbar{display:none;}
 #modalBack{position:fixed;top:0;left:0;right:0;bottom:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:50;}
 #modalBack.open{display:flex;}
 #modalBox{background:var(--panel);border:1px solid #2b3648;border-radius:12px;padding:16px;width:min(560px,94vw);max-height:88vh;overflow:auto;box-shadow:0 12px 44px #000c;}
+#modalBack.innerScrollMode #modalBox{overflow:hidden;display:flex;flex-direction:column;}
+#modalBack.innerScrollMode #modalBody{display:flex;flex-direction:column;max-height:calc(88vh - 32px);min-height:0;}
+#modalBack.innerScrollMode .modalShell{display:flex;flex-direction:column;min-height:0;}
+#modalBack.innerScrollMode .modalScroll{flex:1;min-height:0;overflow:auto;padding-right:8px;margin-right:-8px;}
+#modalBack.innerScrollMode .modalFoot{padding-top:10px;border-top:1px solid var(--line);}
 #modalBox h2{font-size:.95rem;margin-bottom:10px;letter-spacing:.04em;}
 .frow{display:flex;align-items:center;gap:8px;margin:7px 0;font-size:.82rem;}
 .frow>label{flex:none;width:105px;color:#9aa8c2;text-align:right;}
@@ -2224,8 +2229,14 @@ vthumb.addEventListener('pointerdown',dragWindow(e=>{
 
 /* ================= modals ================= */
 const modalBack=document.getElementById('modalBack'), modalBody=document.getElementById('modalBody');
-function openModal(html,mode=''){ modalBody.innerHTML=html; modalBack.classList.toggle('helpMode',mode==='help'); modalBack.classList.add('open'); }
-function closeModal(){ modalBack.classList.remove('open','helpMode'); }
+function openModal(html,mode=''){
+  modalBody.innerHTML=html;
+  modalBack.classList.remove('helpMode','innerScrollMode');
+  if(mode==='help') modalBack.classList.add('helpMode');
+  else if(mode==='inner-scroll') modalBack.classList.add('innerScrollMode');
+  modalBack.classList.add('open');
+}
+function closeModal(){ modalBack.classList.remove('open','helpMode','innerScrollMode'); }
 modalBack.addEventListener('pointerdown',e=>{ if(e.target===modalBack) closeModal(); });
 
 function openHelpModal(){
@@ -2308,7 +2319,7 @@ function openWhatsNewModal(){
       ${releases.map(([v,name,items])=>`<details class="releaseEntry"><summary>v${v} <span>${name}</span></summary><ul>${items.map(x=>`<li>${x}</li>`).join('')}</ul></details>`).join('')}
     </section>
   </div>
-  <div class="mbtns"><button class="accent" id="newsClose">Close</button></div></div>`);
+  <div class="mbtns"><button class="accent" id="newsClose">Close</button></div></div>`,'inner-scroll');
   document.getElementById('newsClose').onclick=closeModal;
 }
 
@@ -2380,7 +2391,8 @@ function openRowModal(r){
   const po0=Math.round((r.patOp==null?0.85:r.patOp)*100);
   const yc0=Math.round((r.yCurve||1)*100);
   let rp=r.partials?r.partials.map(p=>({...p})):defaultParts();
-  openModal(`<h2>Row settings — ${r.id}</h2>
+  openModal(`<div class="modalShell"><h2>Row settings — ${r.id}</h2>
+  <div class="modalScroll">
   <div class="frow"><label>ID</label><input type="text" id="mId" value="${r.id}"></div>
   <div class="frow"><label>Label</label><input type="text" id="mLabel" value="${r.label.replace(/"/g,'&quot;')}" placeholder="(defaults to ID)"></div>
   <div class="frow"><label>Groups</label><input type="text" id="mGroups" value="${(r.groups||'').replace(/"/g,'&quot;')}" placeholder="e.g. keys, melody"></div>
@@ -2440,12 +2452,13 @@ function openRowModal(r){
       <div class="adsr-group"><input type="range" id="mSR" min="10" max="2000" value="${r0}"><output id="mSRv">${r0}</output><label>R ms</label></div>
     </div></div>
   </div>
-  <div class="merr" id="mErr"></div>
+  </div>
+  <div class="modalFoot"><div class="merr" id="mErr"></div>
   <div class="mbtns">
     <button id="mDelete" style="margin-right:auto">Delete row</button>
     <button id="mCancel">Cancel</button>
     <button class="accent" id="mSave">Save</button>
-  </div>`);
+  </div></div></div>`,'inner-scroll');
   document.getElementById('mRat').value=r.ratiosTxt;
   const $=id=>document.getElementById(id);
   const syncT=()=>{ const t=$('mType').value;
@@ -2727,7 +2740,8 @@ function openGlobalModal(){
   const sv={a:Math.round(synth.a*1000),d:Math.round(synth.d*1000),s:Math.round(synth.s*100),r:Math.round(synth.r*1000)};
   const midiOutDevs=midi.access?midiOutputs():[];
   const midiInDevs=midi.access?midiInputs():[];
-  openModal(`<h2>Global settings</h2>
+  openModal(`<div class="modalShell"><h2>Global settings</h2>
+  <div class="modalScroll">
   <div class="frow"><label>A4 (tuning ref)</label><input type="number" id="mA4" min="100" max="1000" step="0.01" value="${settings.A4}"><span style="font-size:.8rem;flex:none">Hz</span></div>
   <div class="frow"><label>Default wave</label><select id="mGWave">
     ${WAVE_OPTS.map(([vv,n])=>`<option value="${vv}"${synth.wave===vv?' selected':''}>${n}</option>`).join('')}</select></div>
@@ -2793,8 +2807,9 @@ function openGlobalModal(){
     <button id="mExp" style="flex:none">Export →</button><button id="mImp" style="flex:none">← Import</button>
     <span class="mhelp" style="margin:0" id="mWsMsg"></span></div>
   <div class="frow"><textarea id="mWs" rows="4" style="flex:1" spellcheck="false" placeholder="raw workspace JSON — Projects (toolbar) also: files, browser storage, gzip share links"></textarea></div>
-  <div class="mbtns"><button id="mCancel">Close</button><button class="accent" id="mSave">Save</button></div>
-  <div class="aboutBox">ISOCTA · APPLIED ACOUSTICS DIVISION · SCALELAB v${APP_VERSION}<br>© ISOCTA. FOR INTERNAL USE.</div>`);
+  <div class="aboutBox">ISOCTA · APPLIED ACOUSTICS DIVISION · SCALELAB v${APP_VERSION}<br>© ISOCTA. FOR INTERNAL USE.</div>
+  </div>
+  <div class="modalFoot"><div class="mbtns"><button id="mCancel">Close</button><button class="accent" id="mSave">Save</button></div></div></div>`,'inner-scroll');
   const $=id=>document.getElementById(id);
   $('mGWave').onchange=e=>{ synth.wave=e.target.value;
     $('mGProw').style.display=synth.wave==='custom'?'flex':'none';
