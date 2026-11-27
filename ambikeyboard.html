@@ -1136,7 +1136,7 @@ function formatIntervalPair(f1,f2){
   const left=`${escHtml(nearestNoteStr(f1))}→${escHtml(nearestNoteStr(f2))} ${dir}`;
   if(exact){
     const exactLabel=escHtml(name);
-    return {short:`${ratioCents} · ${exactLabel}`,long:`${left} ${ratioCents} · ${exactLabel}`};
+    return {short:exactLabel,long:`${left} ${ratioCents} · ${exactLabel}`};
   }
   const offR=+off.toFixed(d);
   const offS=(Math.abs(offR)<Math.pow(10,-d)/2?'±0':(offR>0?'+':'−')+Math.abs(offR).toFixed(d));
@@ -1582,6 +1582,33 @@ function drawChordIntervals(v){
   }).filter(p=>p.x>=0&&p.x<=v.W).sort((a,b)=>(a.x-b.x)||(a.y-b.y));
   if(pts.length<2) return;
   const ctx=v.ctx;
+  const occupied=[];
+  const placeLabel=(cx,preferredY,text)=>{
+    ctx.font='10px monospace';
+    const tw=Math.max(42,Math.min(v.W-8,ctx.measureText(text).width+10));
+    const th=14;
+    const overlap=(tx,ty)=>{
+      for(const b of occupied){
+        if(tx< b.x2&&tx+tw>b.x1&&ty<b.y2&&ty+th>b.y1) return true;
+      }
+      return false;
+    };
+    let ty=Math.max(v.rh+2,preferredY);
+    for(let step=0;step<18;step++){
+      const candidates=[ty-step*16,ty+step*16];
+      for(const cy of candidates){
+        if(cy<v.rh+2||cy+th>v.H) continue;
+        const tx=cx-tw/2;
+        if(!overlap(tx,cy)){
+          occupied.push({x1:tx,x2:tx+tw,y1:cy,y2:cy+th});
+          return {x:tx,y:cy,w:tw,h:th};
+        }
+      }
+    }
+    const tx=cx-tw/2;
+    occupied.push({x1:tx,x2:tx+tw,y1:v.rh+2,y2:v.rh+2+th});
+    return {x:tx,y:v.rh+2,w:tw,h:th};
+  };
   let lane=0;
   for(let i=0;i<pts.length;i++){
     for(let j=i+1;j<pts.length;j++){
@@ -1599,13 +1626,12 @@ function drawChordIntervals(v){
         ctx.quadraticCurveTo(side,cy,a.x,yBottom);
         ctx.stroke();
         const t=formatIntervalPair(a.f,b.f).short;
-        ctx.font='10px monospace';
-        const tw=Math.min(150,Math.max(42,ctx.measureText(t).width+8));
-        ctx.fillStyle='rgba(10,12,20,.72)';
-        ctx.fillRect(side-tw/2,cy-6,tw,12);
+        const box=placeLabel(side,cy-7,t);
+        ctx.fillStyle='rgba(10,12,20,.88)';
+        ctx.fillRect(box.x,box.y,box.w,box.h);
         ctx.textAlign='center'; ctx.textBaseline='middle';
         ctx.fillStyle='rgba(255,255,255,.88)';
-        ctx.fillText(t,side,cy);
+        ctx.fillText(t,box.x+box.w/2,box.y+box.h/2);
         ctx.restore();
         continue;
       }
@@ -1621,15 +1647,13 @@ function drawChordIntervals(v){
       ctx.quadraticCurveTo(cx,peak,b.x,b.y);
       ctx.stroke();
       const t=formatIntervalPair(a.f,b.f).short;
-      ctx.font='10px monospace';
-      ctx.fillStyle='rgba(10,12,20,.72)';
-      const tw=Math.min(150,Math.max(42,ctx.measureText(t).width+8));
-      const tx=cx-tw/2, ty=peak-11;
-      ctx.fillRect(tx,ty,tw,11);
+      const box=placeLabel(cx,peak-15,t);
+      ctx.fillStyle='rgba(10,12,20,.88)';
+      ctx.fillRect(box.x,box.y,box.w,box.h);
       ctx.textAlign='center';
-      ctx.textBaseline='top';
+      ctx.textBaseline='middle';
       ctx.fillStyle='rgba(255,255,255,.88)';
-      ctx.fillText(t,cx,ty+1);
+      ctx.fillText(t,box.x+box.w/2,box.y+box.h/2);
       ctx.restore();
     }
   }
@@ -2585,7 +2609,7 @@ function openWhatsNewModal(){
   <div class="releaseScroll">
     <ul class="releaseList">
       <li><b>Chord sequences for bindings</b> — Keyboard/MIDI bindings can now target note sequences/chords from one trigger using a row*ratio list.</li>
-      <li><b>Chord interval overlays</b> — Active chords now draw arcs from the triggered pad positions for every note pair, with exact-match interval names, rational ratio-plus-cents labels, and cents-only labels for irrational ratios.</li>
+      <li><b>Chord interval overlays</b> — Active chords now draw arcs from the triggered pad positions for every note pair, with exact-match interval names, rational ratio-plus-cents labels, cents-only irrational labels, and collision-separated label lanes.</li>
       <li><b>Spawn-template workflow</b> — Toolbar spawn now uses a dedicated template (set via row eyedropper), while per-row spawn creates shifted copies of that row.</li>
       <li><b>Oscilloscope tool</b> — Added a togglable scope with trigger modes for zero-crossing, first-note, or last-note reference.</li>
       <li><b>Row editor live preview</b> — Row-setting changes now update the canvas immediately; Save confirms and Cancel fully restores the original row.</li>
@@ -2611,7 +2635,7 @@ function partialsHTML(prefix,parts){
      <input type="text" class="${prefix}R pRatio" data-i="${i}" value="${+p.r.toFixed(4)}" spellcheck="false" title="ratio × f₀">
      <input type="text" class="${prefix}D pDecay" data-i="${i}" value="${p.d||''}" placeholder="·" spellcheck="false" title="decay s (blank = sustained)">
    </div>`).join('')+`</div>
-   <span style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:2px;flex:none;max-width:100%">
+   <span style="display:flex;flex-direction:column;flex-wrap:nowrap;align-items:flex-start;gap:2px;flex:none;max-width:100%">
     <button class="${prefix}Add" title="Add partial" style="font-size:.62rem;padding:1px 4px">+</button>
     <button class="${prefix}Del" title="Remove last partial" style="font-size:.62rem;padding:1px 4px">−</button>
     ${Object.keys(PART_PRESETS).map(pr=>`<button class="${prefix}Pre" data-p="${pr}" style="font-size:.58rem;padding:1px 4px">${pr}</button>`).join('')}
