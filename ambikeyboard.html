@@ -1081,11 +1081,15 @@ function midiInPlayOn(note){
   const key='m'+note;
   if(assignMode){
     if(!pendingPad) return;
-    const fixed=pendingShift?pendingPad.f:null;
-    bindings.set(key,{rowId:pendingPad.row.id,mult:pendingPad.mult,fixed,
-      seq:[{rowId:pendingPad.row.id,mult:pendingPad.mult,fixed}]});
-    hint('Bound MIDI ♪'+midiName(note)+' ('+note+') → '+(fixed!=null?('fixed '+fmtHz(fixed)+' Hz (ruler pin)'):
-      (pendingPad.row.id+' · follows f₀')));
+    const seq=(pendingPad.seq||[{row:pendingPad.row,mult:pendingPad.mult,f:pendingPad.f}]).map(p=>{
+      const fixed=pendingShift?p.f:null;
+      return {rowId:p.row.id,mult:p.mult,fixed};
+    });
+    const s0=seq[0];
+    bindings.set(key,{rowId:s0.rowId,mult:s0.mult,fixed:s0.fixed,
+      seq});
+    const targetDesc=seq.map(s=>s.fixed!=null?('fixed '+fmtHz(s.fixed)+' Hz'):s.rowId+'*'+fmtNum(s.mult)).join(' · ');
+    hint('Bound MIDI ♪'+midiName(note)+' ('+note+') → '+targetDesc);
     pendingPad=null; pendingShift=false; rebuild();
     return;
   }
@@ -1131,7 +1135,8 @@ function formatIntervalPair(f1,f2){
   const ratioCents = ratioS ? `${ratioS} (${centsS})` : centsS;
   const left=`${escHtml(nearestNoteStr(f1))}→${escHtml(nearestNoteStr(f2))} ${dir}`;
   if(exact){
-    return {short:ratioCents,long:`${left} ${ratioCents} = ${escHtml(name)}`};
+    const exactLabel=escHtml(name);
+    return {short:`${ratioCents} · ${exactLabel}`,long:`${left} ${ratioCents} · ${exactLabel}`};
   }
   const offR=+off.toFixed(d);
   const offS=(Math.abs(offR)<Math.pow(10,-d)/2?'±0':(offR>0?'+':'−')+Math.abs(offR).toFixed(d));
@@ -1554,8 +1559,27 @@ function drawCursorLine(ctx,x,color,alpha,top,bottom){
 }
 function drawChordIntervals(v){
   if(voices.size<2) return;
-  const pts=[...voices.values()].map(vv=>({f:vv.f,x:xToPxV(v,Math.log2(vv.f))}))
-    .filter(p=>p.x>=0&&p.x<=v.W).sort((a,b)=>a.x-b.x);
+  const pts=[...voices.values()].map(vv=>{
+    const x=xToPxV(v,Math.log2(vv.f));
+    let y=v.rh+18;
+    let best=null, bd=Infinity;
+    for(const p of v.pts){
+      if(vv.row&&p.row!==vv.row) continue;
+      const dx=p.x-x, dl=p.logf-vv.logf;
+      const d=dx*dx+(dl*1200)*(dl*1200)*4;
+      if(d<bd){ bd=d; best=p; }
+    }
+    if(!best){
+      bd=Infinity;
+      for(const p of v.pts){
+        const dx=p.x-x, dl=p.logf-vv.logf;
+        const d=dx*dx+(dl*1200)*(dl*1200)*4;
+        if(d<bd){ bd=d; best=p; }
+      }
+    }
+    if(best) y=best.y;
+    return {f:vv.f,x,y};
+  }).filter(p=>p.x>=0&&p.x<=v.W).sort((a,b)=>(a.x-b.x)||(a.y-b.y));
   if(pts.length<2) return;
   const ctx=v.ctx;
   let lane=0;
@@ -1563,16 +1587,38 @@ function drawChordIntervals(v){
     for(let j=i+1;j<pts.length;j++){
       const a=pts[i], b=pts[j];
       const span=b.x-a.x;
-      if(span<18) continue;
-      const y0=v.rh+10+((lane++)%4)*11;
-      const peak=Math.max(v.rh+3,y0-Math.min(40,12+span*0.12));
+      if(Math.abs(span)<1){
+        const yTop=Math.min(a.y,b.y), yBottom=Math.max(a.y,b.y);
+        const side=a.x+18+((lane++)%3)*8;
+        const cy=(yTop+yBottom)/2;
+        ctx.save();
+        ctx.strokeStyle='rgba(255,255,255,.42)';
+        ctx.lineWidth=1.15;
+        ctx.beginPath();
+        ctx.moveTo(a.x,yTop);
+        ctx.quadraticCurveTo(side,cy,a.x,yBottom);
+        ctx.stroke();
+        const t=formatIntervalPair(a.f,b.f).short;
+        ctx.font='10px monospace';
+        const tw=Math.min(150,Math.max(42,ctx.measureText(t).width+8));
+        ctx.fillStyle='rgba(10,12,20,.72)';
+        ctx.fillRect(side-tw/2,cy-6,tw,12);
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillStyle='rgba(255,255,255,.88)';
+        ctx.fillText(t,side,cy);
+        ctx.restore();
+        continue;
+      }
+      const laneStep=(lane++%5)*7;
+      const yTop=Math.min(a.y,b.y)-18-laneStep-Math.min(22,Math.abs(span)*0.06);
+      const peak=Math.max(v.rh+18,yTop);
       const cx=(a.x+b.x)/2;
       ctx.save();
       ctx.strokeStyle='rgba(255,255,255,.42)';
       ctx.lineWidth=1.15;
       ctx.beginPath();
-      ctx.moveTo(a.x,y0);
-      ctx.quadraticCurveTo(cx,peak,b.x,y0);
+      ctx.moveTo(a.x,a.y);
+      ctx.quadraticCurveTo(cx,peak,b.x,b.y);
       ctx.stroke();
       const t=formatIntervalPair(a.f,b.f).short;
       ctx.font='10px monospace';
@@ -1602,7 +1648,9 @@ function drawView(v){
       actC[i]=m;
     }
   }
-  const pendKey=(pendingPad&&!pendingShift)? pendingPad.row.id+'|'+pendingPad.mult : null;
+  const pendKeys=(pendingPad&&!pendingShift)
+    ?new Set((pendingPad.seq||[{row:pendingPad.row,mult:pendingPad.mult}]).map(p=>p.row.id+'|'+p.mult))
+    :null;
   const visiblePoly=poly=>{
     let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;
     for(const vv of poly){ if(vv.x<x0)x0=vv.x; if(vv.x>x1)x1=vv.x; if(vv.y<y0)y0=vv.y; if(vv.y>y1)y1=vv.y; }
@@ -1640,7 +1688,7 @@ function drawView(v){
     const p=v.pts[i], cm=actC[i];
     if(cm<=EXACT_C){ ctx.strokeStyle='#ffd700'; ctx.lineWidth=2; strokeCell(v,i); }
     else if(settings.haloOn&&cm<=NEAR_C){ ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=1.2; strokeCell(v,i); }
-    if(pendKey===p.key){ ctx.save(); ctx.setLineDash([4,3]);
+    if(pendKeys&&pendKeys.has(p.key)){ ctx.save(); ctx.setLineDash([4,3]);
       ctx.strokeStyle='#ff5d73'; ctx.lineWidth=2; strokeCell(v,i); ctx.restore(); }
   }
   /* per-pad exact-frequency tick, behind labels */
@@ -1779,8 +1827,11 @@ function drawRulerPins(v){
     drawRulerPin(v,x,bindLabel(k),'#ffd700',false);
   }
   if(pendingPad&&pendingShift){
-    const x=Math.max(8,Math.min(v.W-8,xToPxV(v,Math.log2(pendingPad.f))));
-    drawRulerPin(v,x,'?','#ff5d73',true);
+    const seq=pendingPad.seq||[{f:pendingPad.f}];
+    for(const p of seq){
+      const x=Math.max(8,Math.min(v.W-8,xToPxV(v,Math.log2(p.f))));
+      drawRulerPin(v,x,'?','#ff5d73',true);
+    }
   }
 }
 let fftFrame=0;
@@ -2097,8 +2148,20 @@ function wireCanvasInput(v){
     const {x,y}=getPosEl(cvEl,e); const i=nearestPtV(x,y,v);
     if(i<0) return;
     const pt=v.pts[i];
-    if(assignMode){ pendingPad={row:pt.row,mult:pt.mult,f:pt.f}; pendingShift=e.shiftKey; drawAll();
-      hint('Armed '+pt.label+' ('+fmtHz(pt.f)+' Hz) — press a key OR play a MIDI note · hold Shift: ruler pin · Backspace: unbind · Esc'); return; }
+    if(assignMode){
+      if(!pendingPad){
+        pendingPad={row:pt.row,mult:pt.mult,f:pt.f,seq:[{row:pt.row,mult:pt.mult,f:pt.f}]};
+        pendingShift=e.shiftKey;
+        hint('Armed '+pt.label+' ('+fmtHz(pt.f)+' Hz) · click another pad to add it to the chord/sequence · press a key or MIDI note to finish · Backspace: unbind · Esc');
+      } else {
+        const seq=pendingPad.seq||(pendingPad.seq=[]);
+        const exists=seq.some(p=>p.row===pt.row&&Math.abs(p.mult-pt.mult)<1e-12);
+        if(!exists) seq.push({row:pt.row,mult:pt.mult,f:pt.f});
+        hint(seq.length+' pads armed · press a key or MIDI note to assign the sequence/chord · click more pads to add · Backspace: unbind · Esc');
+      }
+      drawAll();
+      return;
+    }
     if(spawnArm){ doSpawn(pt,e.shiftKey); return; }
     const vk='v'+(++vseq);
     pointers.set(e.pointerId,{pad:pt.key,vk,view:v});
@@ -2184,19 +2247,23 @@ document.addEventListener('keydown',e=>{
     if(k==='Escape'){ pendingPad=null; pendingShift=false; assignMode=false; assignBtn.classList.remove('toggledOn'); setCanvasCursors(''); drawAll(); hint(''); return; }
     if(!pendingPad) return;
     if(k==='Backspace'||k==='Delete'){
-      for(const [key,b] of [...bindings])
-        if(
-          (b.rowId===pendingPad.row.id&&b.mult===pendingPad.mult) ||
-          (Array.isArray(b.seq)&&b.seq.some(s=>s.rowId===pendingPad.row.id&&s.mult===pendingPad.mult))
-        ) bindings.delete(key);
+      const targets=pendingPad.seq||[{row:pendingPad.row,mult:pendingPad.mult,f:pendingPad.f}];
+      for(const [key,b] of [...bindings]){
+        const seq=Array.isArray(b.seq)&&b.seq.length?b.seq:[b];
+        if(seq.some(s=>targets.some(p=>s.rowId===p.row.id&&Math.abs(s.mult-p.mult)<1e-12))) bindings.delete(key);
+      }
       hint('Unbound (letters + MIDI notes on that pad)');
       pendingPad=null; pendingShift=false; rebuild();
     } else if(k.length===1){
-      const fixed=(pendingShift||e.shiftKey)?pendingPad.f:null;
-      bindings.set(k,{rowId:pendingPad.row.id,mult:pendingPad.mult,fixed,
-        seq:[{rowId:pendingPad.row.id,mult:pendingPad.mult,fixed}]});
-      hint('Bound "'+k.toUpperCase()+'" → '+(fixed!=null?('fixed '+fmtHz(fixed)+' Hz (ruler pin)'):
-        (pendingPad.row.id+' · follows f₀')));
+      const targets=pendingPad.seq||[{row:pendingPad.row,mult:pendingPad.mult,f:pendingPad.f}];
+      const seq=targets.map(p=>{
+        const fixed=(pendingShift||e.shiftKey)?p.f:null;
+        return {rowId:p.row.id,mult:p.mult,fixed};
+      });
+      const s0=seq[0];
+      bindings.set(k,{rowId:s0.rowId,mult:s0.mult,fixed:s0.fixed,seq});
+      const targetDesc=seq.map(s=>s.fixed!=null?('fixed '+fmtHz(s.fixed)+' Hz'):s.rowId+'*'+fmtNum(s.mult)).join(' · ');
+      hint('Bound "'+k.toUpperCase()+'" → '+targetDesc);
       pendingPad=null; pendingShift=false; rebuild();
     }
     e.preventDefault();
@@ -2297,7 +2364,7 @@ function setCanvasCursors(c){ for(const v of views) if(v.cv) v.cv.style.cursor=c
 assignBtn.onclick=()=>{
   assignMode=!assignMode; pendingPad=null; pendingShift=false;
   assignBtn.classList.toggle('toggledOn',assignMode);
-  hint(assignMode?'ASSIGN MODE — click a pad, then press a key OR play a MIDI note (Shift = fixed Hz pin) · Esc exits':'');
+  hint(assignMode?'ASSIGN MODE — click pads to build a chord/sequence, then press a key OR play a MIDI note · Shift held = fixed Hz pins · Esc exits':'');
   setCanvasCursors(assignMode?'crosshair':'');
   rebuild();
 };
@@ -2518,7 +2585,7 @@ function openWhatsNewModal(){
   <div class="releaseScroll">
     <ul class="releaseList">
       <li><b>Chord sequences for bindings</b> — Keyboard/MIDI bindings can now target note sequences/chords from one trigger using a row*ratio list.</li>
-      <li><b>Chord interval overlays</b> — Active chords now draw interval spans between every note pair on the canvas, and interval text now uses ratio-plus-cents style (for example 16/15 (111.7c)).</li>
+      <li><b>Chord interval overlays</b> — Active chords now draw arcs from the triggered pad positions for every note pair, with exact-match interval names, rational ratio-plus-cents labels, and cents-only labels for irrational ratios.</li>
       <li><b>Spawn-template workflow</b> — Toolbar spawn now uses a dedicated template (set via row eyedropper), while per-row spawn creates shifted copies of that row.</li>
       <li><b>Oscilloscope tool</b> — Added a togglable scope with trigger modes for zero-crossing, first-note, or last-note reference.</li>
       <li><b>Row editor live preview</b> — Row-setting changes now update the canvas immediately; Save confirms and Cancel fully restores the original row.</li>
@@ -2544,7 +2611,7 @@ function partialsHTML(prefix,parts){
      <input type="text" class="${prefix}R pRatio" data-i="${i}" value="${+p.r.toFixed(4)}" spellcheck="false" title="ratio × f₀">
      <input type="text" class="${prefix}D pDecay" data-i="${i}" value="${p.d||''}" placeholder="·" spellcheck="false" title="decay s (blank = sustained)">
    </div>`).join('')+`</div>
-   <span style="display:flex;flex-wrap:nowrap;align-items:flex-start;gap:2px;flex:none;white-space:nowrap;overflow-x:auto;max-width:100%">
+   <span style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:2px;flex:none;max-width:100%">
     <button class="${prefix}Add" title="Add partial" style="font-size:.62rem;padding:1px 4px">+</button>
     <button class="${prefix}Del" title="Remove last partial" style="font-size:.62rem;padding:1px 4px">−</button>
     ${Object.keys(PART_PRESETS).map(pr=>`<button class="${prefix}Pre" data-p="${pr}" style="font-size:.58rem;padding:1px 4px">${pr}</button>`).join('')}
