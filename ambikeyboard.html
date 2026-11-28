@@ -1477,9 +1477,7 @@ function chooseTextAnchor(polys,ax,ay,avoidRect){
     [ax+16,ay+10],[ax-16,ay+10],[ax+16,ay-10],[ax-16,ay-10]
   ];
   let best=null, bestScore=Infinity;
-  const blocked=(x,y)=>avoidRect&&
-    x+7>=avoidRect.x0&&x-7<=avoidRect.x1&&
-    y+5>=avoidRect.y0&&y-5<=avoidRect.y1;
+  const blocked=(x,y)=>avoidRect&&x>=avoidRect.x0&&x<=avoidRect.x1&&y>=avoidRect.y0&&y<=avoidRect.y1;
   for(const [x,y] of candidates){
     if(blocked(x,y)) continue;
     let ok=false, edge=0;
