@@ -1469,9 +1469,12 @@ function pointInPoly(poly,x,y){
 }
 function chooseTextAnchor(polys,ax,ay,avoidRect){
   const candidates=[
-    [ax,ay],[ax+10,ay],[ax-10,ay],[ax,ay+10],[ax,ay-10],
-    [ax+14,ay+8],[ax-14,ay+8],[ax+14,ay-8],[ax-14,ay-8],
-    [ax,ay+16],[ax,ay-16],[ax+20,ay],[ax-20,ay]
+    [ax,ay],
+    [ax+8,ay],[ax-8,ay],[ax,ay+8],[ax,ay-8],
+    [ax+12,ay],[ax-12,ay],[ax,ay+12],[ax,ay-12],
+    [ax+10,ay+10],[ax-10,ay+10],[ax+10,ay-10],[ax-10,ay-10],
+    [ax+16,ay],[ax-16,ay],[ax,ay+16],[ax,ay-16],
+    [ax+16,ay+10],[ax-16,ay+10],[ax+16,ay-10],[ax-16,ay-10]
   ];
   let best=null, bestScore=Infinity;
   const blocked=(x,y)=>avoidRect&&x>=avoidRect.x0&&x<=avoidRect.x1&&y>=avoidRect.y0&&y<=avoidRect.y1;
@@ -1582,34 +1585,63 @@ function drawPadLabel(v,polys,p,chars){
   ctx.restore();
   return {ax,ay,labelRect};
 }
-function drawMergedRunChars(v,run,polys,compositeAnchor,avoidRect){
-  const chars=[];
-  let dim=false;
+function drawMergedRunChars(v,run,compositeAnchor,avoidRect){
+  const handled=new Set();
   for(const m of run){
     const key=v.pts[m].key;
-    const labels=padChar.get(key)||[];
-    for(const c of labels) if(!chars.includes(c)) chars.push(c);
-    dim=dim||!!v.pts[m].row.mute;
+    if(handled.has(key)) continue;
+    handled.add(key);
+    const chars=padChar.get(key)||[];
+    if(!chars.length) continue;
+
+    const gi=v.grp[m];
+    const members=v.grpMembers.get(gi)||[m];
+    const polys=members.map(i=>v.fills[i]).filter(poly=>poly&&poly.length>=3);
+    if(!polys.length) continue;
+
+    let A=0,cx=0,cy=0,x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+    for(const poly of polys){
+      for(let k=0;k<poly.length;k++){
+        const a=poly[k], b=poly[(k+1)%poly.length];
+        const w=a.x*b.y-b.x*a.y;
+        A+=w; cx+=(a.x+b.x)*w; cy+=(a.y+b.y)*w;
+        if(a.x<x0)x0=a.x; if(a.x>x1)x1=a.x;
+        if(a.y<y0)y0=a.y; if(a.y>y1)y1=a.y;
+      }
+    }
+    if(Math.abs(A)<180) continue;
+    const ax=cx/(3*A), ay=cy/(3*A);
+
+    let rect=avoidRect;
+    if(compositeAnchor){
+      const bw=x1-x0,bh=y1-y0;
+      if(bw>28&&bh>20){
+        rect={
+          x0:compositeAnchor.x-Math.min(40,bw*.35),
+          x1:compositeAnchor.x+Math.min(40,bw*.35),
+          y0:compositeAnchor.y-16,y1:compositeAnchor.y+15
+        };
+      }
+    }
+    let anchor=chooseTextAnchor(polys,ax,ay,rect);
+    if(!anchor&&rect) anchor=chooseTextAnchor(polys,ax,ay,null);
+    if(!anchor) continue;
+
+    const dim=!!v.pts[m].row.mute;
+    const ctx=v.ctx;
+    ctx.save();
+    ctx.beginPath();
+    for(const poly of polys){
+      ctx.moveTo(poly[0].x,poly[0].y);
+      for(let k=1;k<poly.length;k++) ctx.lineTo(poly[k].x,poly[k].y);
+      ctx.closePath();
+    }
+    ctx.clip();
+    ctx.font='bold 9px monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle=dim?'rgba(255,255,255,.55)':'rgba(10,10,20,.85)';
+    ctx.fillText(chars.join(''),anchor.x,anchor.y);
+    ctx.restore();
   }
-  if(!chars.length||!compositeAnchor) return;
-  let anchor=chooseTextAnchor(polys,compositeAnchor.x,compositeAnchor.y,avoidRect);
-  if(!anchor&&avoidRect){
-    anchor=chooseTextAnchor(polys,compositeAnchor.x,compositeAnchor.y,null);
-  }
-  if(!anchor) return;
-  const ctx=v.ctx;
-  ctx.save();
-  ctx.beginPath();
-  for(const poly of polys){
-    ctx.moveTo(poly[0].x,poly[0].y);
-    for(let k=1;k<poly.length;k++) ctx.lineTo(poly[k].x,poly[k].y);
-    ctx.closePath();
-  }
-  ctx.clip();
-  ctx.font='bold 9px monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillStyle=dim?'rgba(255,255,255,.55)':'rgba(10,10,20,.85)';
-  ctx.fillText(chars.join(''),anchor.x,anchor.y);
-  ctx.restore();
 }
 function drawRulerPin(v,x,char,color,dashed){
   const ctx=v.ctx;
@@ -1851,7 +1883,7 @@ function drawView(v){
           const p0=v.pts[run[0]];
           const runPolys=run.map(m=>v.fills[m]);
           const meta=drawPadLabel(v,runPolys,p0,null);
-          drawMergedRunChars(v,run,runPolys,
+          drawMergedRunChars(v,run,
             meta?{x:meta.ax,y:meta.ay}:null,meta?.labelRect||null);
           for(const m of run) drawn[m]=1;
         }
