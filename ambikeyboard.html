@@ -166,7 +166,7 @@ body.hideSliders .vhbar{display:none;}
 <body>
 
 <div id="toolbar">
-  <div id="brand"><span id="brandSvg"></span><div class="btxt"><b>ISOCTA</b><span>SCALELAB · V22.0</span></div></div>
+  <div id="brand"><span id="brandSvg"></span><div class="btxt"><b>ISOCTA</b><span>SCALELAB · V23.0</span></div></div>
   <span id="projName" class="dim" title="Current project — click to open Projects">unsaved</span>
   <input type="text" id="saveName" placeholder="project name…" spellcheck="false">
   <div class="tbsep"></div>
@@ -232,7 +232,7 @@ const settings = { A4: 440, grid: true, padLabels: true, vBias: 0.5,
   fftOn: true, fftSize: 16384, cursor: true, cursorHarm: true,
   haloOn: true, haloCents: 50, centDigits: 1, slidersHidden: false,
   chordArcsOn: true, oscOn: false, oscTrigger: 'first', oscTimeMode: 'frequency', oscMs: 20, oscPeriods: 8,
-  oscAutoAmp: true };
+  oscHysteresis: 0.02, oscPhosphorDecay: 0.6, oscAutoAmp: true };
 function defaultParts(){ return [1,2,3,4,5,6,7,8].map(n=>({r:n,g:+(1/n).toFixed(3),d:0})); }
 const synth = { wave:'triangle', a:0.01, d:0.12, s:0.7, r:0.3, vol:0.6, partials:defaultParts() };
 const midi = { access:null, out:null, enabled:false, outId:'', bendRange:48, mono:false, monoCh:1,
@@ -243,7 +243,7 @@ const rulerH = 30, HBH = 30, MINSPAN = 0.2, MINBODY = 36, TINYH = 14;
 const TOL_F = 2.5e-5;
 const EXACT_C = TOL_F*1200;
 const NEAR_C = 1;
-const APP_VERSION='22.0';
+const APP_VERSION='23.0';
 const LS_WHATSNEW='isocta.scalelab.whatsnew';
 /* tabs → views → rows. `views` is a live alias of the ACTIVE tab's views;
    row/group refs resolve across ALL tabs. */
@@ -1876,70 +1876,191 @@ function drawRulerPins(v){
   }
 }
 let fftFrame=0;
+const SCOPE_MAX_TRACES_PER_SECOND=30;
+const SCOPE_CLOCK_TAU=0.65;
+const SCOPE_PHASE_GAIN=0.12;
+const SCOPE_GAIN_ALPHA=0.18;
+const oscCaptureClock={
+  interval:null, divider:1, due:null, lastCapture:null, lastTime:null, phaseError:0,
+  triggerFrequency:null, captureFrequency:null, amplitudeScale:1
+};
+let oscPhosphorCanvas=null;
+function resetOscilloscope(){
+  oscCaptureClock.interval=null;
+  oscCaptureClock.due=null;
+  oscCaptureClock.lastCapture=null;
+  oscCaptureClock.lastTime=null;
+  oscCaptureClock.phaseError=0;
+  oscCaptureClock.triggerFrequency=null;
+  oscCaptureClock.captureFrequency=null;
+  oscCaptureClock.amplitudeScale=1;
+  if(oscPhosphorCanvas){
+    const c=oscPhosphorCanvas.getContext('2d');
+    c.clearRect(0,0,oscPhosphorCanvas.width,oscPhosphorCanvas.height);
+  }
+}
 function oscAnchorFreq(){
   if(!voices.size) return null;
   const arr=[...voices.values()].sort((a,b)=>a.ord-b.ord);
   if(settings.oscTrigger==='first') return arr[0].f;
   if(settings.oscTrigger==='last') return arr[arr.length-1].f;
+  if(settings.oscTrigger==='lowest') return Math.min(...arr.map(v=>v.f));
+  if(settings.oscTrigger==='highest') return Math.max(...arr.map(v=>v.f));
   return null;
+}
+function findScopeCrossings(data,direction,hysteresis){
+  let peak=0;
+  for(let i=0;i<data.length;i++) peak=Math.max(peak,Math.abs(data[i]));
+  if(peak<1e-6) return [];
+  const h=peak*Math.max(0,Math.min(.1,+hysteresis||0));
+  if(h===0){
+    const out=[];
+    for(let i=1;i<data.length;i++){
+      const hit=direction==='negative'
+        ? data[i-1]>=0&&data[i]<0
+        : data[i-1]<=0&&data[i]>0;
+      if(hit) out.push(i);
+    }
+    return out;
+  }
+  const out=[];
+  const positive=direction!=='negative';
+  let armed=positive?data[0] < -h:data[0] > h;
+  for(let i=1;i<data.length;i++){
+    if(armed){
+      if(positive?data[i]>=h:data[i]<=-h){
+        out.push(i);
+        armed=false;
+      }
+    } else if(positive?data[i]<=-h:data[i]>=h){
+      armed=true;
+    }
+  }
+  return out;
+}
+function scopeEventFrequency(events,sampleRate){
+  if(events.length<2) return null;
+  const span=events[events.length-1]-events[0];
+  return span>0?(events.length-1)*sampleRate/span:null;
+}
+function scopeCaptureDivider(triggerFrequency){
+  return Math.max(1,Math.round(triggerFrequency/SCOPE_MAX_TRACES_PER_SECOND));
+}
+function updateScopeCaptureClock(clock,triggerFrequency,events,availableUntil,now){
+  if(!(triggerFrequency>0)||!events.length) return null;
+  clock.triggerFrequency=triggerFrequency;
+  const divider=scopeCaptureDivider(triggerFrequency);
+  const targetInterval=divider/triggerFrequency;
+  clock.divider=divider;
+  const dt=clock.lastTime==null?0:Math.max(0,now-clock.lastTime);
+  clock.lastTime=now;
+  if(clock.interval==null){
+    clock.interval=targetInterval;
+    clock.due=events[events.length-1].time;
+  } else if(dt>0){
+    const alpha=1-Math.exp(-dt/SCOPE_CLOCK_TAU);
+    clock.interval+=(targetInterval-clock.interval)*alpha;
+  }
+  const eligible=events.filter(e=>e.time<=availableUntil&&
+    (clock.lastCapture==null||e.time>clock.lastCapture+clock.interval*.45));
+  if(!eligible.length||availableUntil<clock.due) return null;
+  let chosen=eligible[0], distance=Math.abs(chosen.time-clock.due);
+  for(let i=1;i<eligible.length;i++){
+    const d=Math.abs(eligible[i].time-clock.due);
+    if(d<distance){ distance=d; chosen=eligible[i]; }
+  }
+  if(clock.lastCapture!=null&&chosen.time-clock.lastCapture<clock.interval*.75) return null;
+  const phaseError=chosen.time-clock.due;
+  clock.phaseError=phaseError;
+  clock.due+=Math.max(clock.interval,chosen.time-clock.due+clock.interval*.25);
+  clock.due+=Math.max(-clock.interval*.2,Math.min(clock.interval*.2,phaseError*SCOPE_PHASE_GAIN));
+  while(clock.due<=chosen.time) clock.due+=clock.interval;
+  clock.lastCapture=chosen.time;
+  clock.captureFrequency=1/clock.interval;
+  return chosen;
 }
 function drawOscilloscope(){
   const cv=document.getElementById('oscScope');
   if(!cv) return;
-  if(!settings.oscOn||!analyser||!actx){ cv.style.display='none'; return; }
+  if(!settings.oscOn||!analyser||!actx){
+    cv.style.display='none';
+    resetOscilloscope();
+    return;
+  }
   cv.style.display='block';
   const w=cv.clientWidth, h=cv.clientHeight;
   if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
-  const ctx=cv.getContext('2d');
+  if(!oscPhosphorCanvas||oscPhosphorCanvas.width!==w||oscPhosphorCanvas.height!==h){
+    oscPhosphorCanvas=document.createElement('canvas');
+    oscPhosphorCanvas.width=w; oscPhosphorCanvas.height=h;
+  }
   const data=new Float32Array(analyser.fftSize);
   analyser.getFloatTimeDomainData(data);
-  let start=0;
-  let win;
   const af=oscAnchorFreq();
-  const crosses=[];
-  for(let i=0;i<data.length-1;i++) if(data[i]<=0&&data[i+1]>0) crosses.push(i);
-  if(crosses.length) start=crosses[0];
+  const direction=settings.oscTrigger==='negative'?'negative':'positive';
+  const crossingSamples=findScopeCrossings(data,direction,settings.oscHysteresis);
+  const bufferEnd=actx.currentTime;
+  const bufferStart=bufferEnd-data.length/actx.sampleRate;
+  const events=crossingSamples.map(sample=>({sample,time:bufferStart+sample/actx.sampleRate}));
+  const measuredFrequency=scopeEventFrequency(crossingSamples,actx.sampleRate);
+  const triggerFrequency=af||measuredFrequency;
+  let win;
   if(settings.oscTimeMode==='frequency'&&af){
-    const cyc=Math.max(40,Math.round(actx.sampleRate/af));
     const periods=Math.max(1,Math.min(30,+settings.oscPeriods||7));
+    const cyc=Math.max(40,Math.round(actx.sampleRate/triggerFrequency));
     win=Math.max(80,Math.min(data.length-2,cyc*periods));
-    if(crosses.length>1){
-      let bi=0, bd=Infinity;
-      for(let i=0;i<crosses.length-1;i++){
-        const d=Math.abs((crosses[i+1]-crosses[i])-cyc);
-        if(d<bd){ bd=d; bi=i; }
-      }
-      start=crosses[bi];
-    }
+  } else if(settings.oscTimeMode==='frequency'&&triggerFrequency){
+    const periods=Math.max(1,Math.min(30,+settings.oscPeriods||7));
+    win=Math.max(80,Math.min(data.length-2,Math.round(actx.sampleRate*periods/triggerFrequency)));
   } else {
     const ms=Math.max(.5,Math.min(10000,+settings.oscMs||20));
     win=Math.max(32,Math.min(data.length-2,Math.round(actx.sampleRate*ms/1000)));
-    if(crosses.length) start=crosses[0];
   }
-  if(start+win>=data.length) start=Math.max(0,data.length-win-1);
-  let peak=0;
-  for(let i=0;i<win;i++){
-    if(start+i<data.length) peak=Math.max(peak,Math.abs(data[start+i]));
+  const centerSamples=Math.ceil(win/2);
+  const availableUntil=bufferEnd-centerSamples/actx.sampleRate;
+  const capture=triggerFrequency
+    ? updateScopeCaptureClock(oscCaptureClock,triggerFrequency,events,availableUntil,bufferEnd)
+    : null;
+  const traceCtx=oscPhosphorCanvas.getContext('2d');
+  if(capture){
+    let peak=0, start=capture.sample-centerSamples;
+    for(let i=0;i<win;i++) peak=Math.max(peak,Math.abs(data[start+i]));
+    const targetScale=settings.oscAutoAmp&&peak>0.001?0.45/peak:1;
+    oscCaptureClock.amplitudeScale+=(targetScale-oscCaptureClock.amplitudeScale)*SCOPE_GAIN_ALPHA;
+    const ampScale=oscCaptureClock.amplitudeScale;
+    const decay=Math.max(0,Math.min(1,settings.oscPhosphorDecay??.6));
+    traceCtx.save();
+    traceCtx.globalCompositeOperation='destination-out';
+    traceCtx.fillStyle='rgba(0,0,0,'+decay+')';
+    traceCtx.fillRect(0,0,w,h);
+    traceCtx.restore();
+    traceCtx.strokeStyle='rgba(79,209,224,'+Math.max(.08,decay)+')';
+    traceCtx.lineWidth=1.5;
+    traceCtx.beginPath();
+    for(let i=0;i<win;i++){
+      const x=i/(win-1)*w;
+      const y=h*(.5-data[start+i]*ampScale);
+      if(i===0) traceCtx.moveTo(x,y); else traceCtx.lineTo(x,y);
+    }
+    traceCtx.stroke();
   }
-  const ampScale=settings.oscAutoAmp ? (peak>0.001?0.45/peak:1) : 1;
+  const ctx=cv.getContext('2d');
   ctx.clearRect(0,0,w,h);
   ctx.fillStyle='rgba(7,10,15,.92)';
   ctx.fillRect(0,0,w,h);
   ctx.strokeStyle='rgba(80,95,120,.55)';
+  ctx.lineWidth=1;
   ctx.beginPath(); ctx.moveTo(0,h/2+.5); ctx.lineTo(w,h/2+.5); ctx.stroke();
-  ctx.strokeStyle='rgba(79,209,224,.95)';
-  ctx.lineWidth=1.5;
-  ctx.beginPath();
-  for(let i=0;i<win;i++){
-    const x=i/(win-1)*w;
-    const y=h*(0.5-data[start+i]*ampScale);
-    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-  }
-  ctx.stroke();
+  ctx.strokeStyle='rgba(80,95,120,.28)';
+  ctx.beginPath(); ctx.moveTo(w/2+.5,0); ctx.lineTo(w/2+.5,h); ctx.stroke();
+  ctx.drawImage(oscPhosphorCanvas,0,0);
   ctx.fillStyle='rgba(170,190,220,.85)';
   ctx.font='10px monospace';
-  const lbl=settings.oscTrigger==='zero'?'zero':'note';
-  ctx.fillText('scope: '+lbl,8,8);
+  const labels={zero:'zero +',positive:'zero +',negative:'zero -',first:'first note',
+    last:'last note',lowest:'lowest note',highest:'highest note'};
+  const triggerHz=triggerFrequency?fmtHz(triggerFrequency)+' Hz':'--';
+  const captureHz=oscCaptureClock.captureFrequency?oscCaptureClock.captureFrequency.toFixed(1)+' tr/s':'--';
+  ctx.fillText((labels[settings.oscTrigger]||'scope')+' · '+triggerHz+' · '+captureHz,8,10);
 }
 function fftLoop(){
   requestAnimationFrame(fftLoop);
@@ -2434,6 +2555,7 @@ document.getElementById('oscBtn').onclick=()=>{
   settings.oscOn=!settings.oscOn;
   document.getElementById('oscBtn').classList.toggle('toggledOn',settings.oscOn);
   document.getElementById('oscScope').style.display=settings.oscOn?'block':'none';
+  resetOscilloscope();
 };
 document.getElementById('helpBtn').onclick=openHelpModal;
 document.getElementById('setBtn').onclick=openGlobalModal;
@@ -2580,7 +2702,8 @@ function openHelpModal(){
    ['Row settings','links','Links & repetition','<h3>Links &amp; repetition</h3><p>Rows can reference another row ID or a group in f₀. The result is the referenced row’s/group’s last-played pitch, so muted controller rows can retune an entire instrument.</p><p>Group names are comma-separated memberships. Group references work across tabs. Renaming a row updates expressions and bindings; deleting a row substitutes its f₀ expression where possible. Explicit-ratio rows have a separate octave repeat control, so repeated scale copies need not be typed manually.</p>'],
    ['Row settings','rowsound','Per-row sound','<h3>Per-row sound</h3><p>By default a row inherits the global synthesizer. Enabling Custom sound supplies a waveform and ADSR envelope for that row.</p><p>The custom-partial editor creates additive sine components at arbitrary ratios to f₀. Each partial has gain and an optional decay: ratios can be integer harmonics or irrational numbers for bell/rod-like spectra. Saw, square, triangle, bell, rod, and other presets provide starting points.</p>'],
    ['Global settings','tuning','Tuning & synth','<h3>Tuning &amp; global synth</h3><h4>A4 reference</h4><p>A4 sets the absolute conversion for note names, 12-TET annotations, and frequency labels. Changing it retunes note-name expressions without changing ratio-only arithmetic.</p><h4>Default sound</h4><p>Wave, partials, volume, and ADSR provide the inherited instrument for rows without overrides. Attack/decay/release are seconds/ms controls; sustain is a percentage level. Custom partial ratios and decays are per-component, not forced to integer harmonics.</p>'],
-   ['Global settings','visual','Spectrum & guides','<h3>Spectrum &amp; guides</h3><p>The FFT is drawn behind the 12-TET ruler using the active view’s logarithmic frequency range. Larger FFT sizes give better low-frequency precision but update more slowly.</p><ul><li><b>Freq cursor:</b> a vertical line at every sounding fundamental.</li><li><b>Partials:</b> optional differently coloured lines for the actual sounding partials.</li><li><b>Chord arcs:</b> show/hide interval overlays for active chords.</li><li><b>Halo:</b> shows nearby pad frequencies out to a cents radius, separately from exact matches.</li><li><b>Voronoi bias:</b> changes the importance of vertical vs horizontal distance when partitioning pads.</li><li><b>Oscilloscope:</b> togglable scope with zero-crossing, first-note, and last-note triggers.</li><li><b>Cents digits:</b> controls display precision; entering c or ¢ works in fields.</li></ul>'],
+   ['Global settings','visual','Spectrum & guides','<h3>Spectrum &amp; guides</h3><p>The FFT is drawn behind the 12-TET ruler using the active view’s logarithmic frequency range. Larger FFT sizes give better low-frequency precision but update more slowly.</p><ul><li><b>Freq cursor:</b> a vertical line at every sounding fundamental.</li><li><b>Partials:</b> optional differently coloured lines for the actual sounding partials.</li><li><b>Chord arcs:</b> show/hide interval overlays for active chords.</li><li><b>Halo:</b> shows nearby pad frequencies out to a cents radius, separately from exact matches.</li><li><b>Voronoi bias:</b> changes the importance of vertical vs horizontal distance when partitioning pads.</li><li><b>Cents digits:</b> controls display precision; entering c or ¢ works in fields.</li></ul>'],
+   ['Global settings','scope','Oscilloscope','<h3>Oscilloscope</h3><p>The scope can trigger on either zero-crossing direction, the first or last note played, or the lowest or highest live chord note. Crossing triggers measure their actual event frequency from the signal; note triggers use that note’s frequency.</p><p>A damped phase lock decimates trigger events to about 30 traces per second while centering a trigger event on the display. Hysteresis rejects chatter around zero, and phosphor decay blends successive captures for an analog-style trail.</p>'],
    ['Global settings','midiout','MIDI output','<h3>MIDI output</h3><p>MIDI pitch is nominally 12-TET, and pitch bend is a <em>channel-wide</em> controller. If two simultaneous notes use different microtonal bends, one shared channel would move both notes. MPE mode therefore allocates a fresh channel to each live note (channels 2–16), so every note can carry its own note number and bend.</p><p><b>Bend range</b> must match the receiving synth’s range. Larger ranges permit wider microtonal and glissando excursions, but reduce bend resolution. If the receiver has only conventional monophonic MIDI, use Monophonic mode and choose the hardware’s listening channel; notes are legato and bend is shared, as a last-resort approximation.</p>'],
    ['Global settings','midiin','MIDI input & bindings','<h3>MIDI input &amp; bindings</h3><p>Choose an input and an incoming channel (or Omni). In Assign mode, select a pad and play a MIDI key to bind that note exactly like a computer letter. A normal binding follows the target row as it retunes; Shift makes it fixed frequency.</p><p>This supports controller workflows: bind a MIDI note to a muted root pad, reference that pad from another row, then bind a second register of notes to pads on the follower row. The first note silently retunes the follower, while the others perform on it.</p><p>MIDI input bindings and MIDI output targets are independent choices, so the same hardware can be used for input, output, or split roles on different channels.</p>'],
    ['Global settings','other','Bindings & workspace','<h3>Bindings &amp; workspace</h3><p>The Bindings manager lists keyboard and MIDI bindings. Follow bindings store the target row and multiplier; fixed bindings store an absolute frequency and pin it to the ruler.</p><p>Workspace export/import carries settings, rows, tabs, views, bindings, and synth state. The Voronoi, spectrum, and interface settings are part of the workspace rather than the synthesis engine itself.</p>']
@@ -2609,6 +2732,7 @@ function openHelpModal(){
 
 function openWhatsNewModal(){
   const releases=[
+   ['22.0','Chord & scope workspace',['Added keyboard/MIDI binding targets with ordered note sequences and chords.','Added collision-separated chord interval overlays with exact and approximate ratio labels.','Separated toolbar spawn templates from row-derived spawning.','Added the first oscilloscope with zero-crossing and note-reference modes.','Made row setting edits preview live while preserving complete Cancel rollback.','Restored custom-partial preset controls in global and row sound editors.']],
    ['21.4','Interval/readout & cloud polish',['Interval readout gained reduced rational ratios with cents+octave formatting and exact-vs-approx naming.','Cloud Y-curve edits refresh the canvas while editing row settings.','Custom partial preset controls and cloud a-max quick presets were refined.']],
    ['21.3','Help & navigation refresh',['Help moved to a responsive two-pane topic tree with focused Row Settings and Global Settings sections.','Added MIDI output rationale for channel-per-note pitch bend behavior.','Expanded row documentation coverage and improved wheel/touchpad vertical scrolling controls.','Rows and Sliders toolbar toggles now show enabled state.']],
    ['20','MIDI & controller polish',['Added MIDI input assignment for triggering pads from external controllers.','Added MIDI output device selection and configurable monophonic channel.','Preserved assignments when row IDs are renamed.']],
@@ -2635,12 +2759,11 @@ function openWhatsNewModal(){
   openModal(`<div class="newsShell"><h2>What's new in ScaleLab v${APP_VERSION}</h2>
   <div class="releaseScroll">
     <ul class="releaseList">
-      <li><b>Chord sequences for bindings</b> — Keyboard/MIDI bindings can now target note sequences/chords from one trigger using a row*ratio list.</li>
-      <li><b>Chord interval overlays</b> — Active chords now draw arcs from the triggered pad positions for every note pair, with exact-match interval names, rational ratio-plus-cents labels, cents-only irrational labels, and collision-separated label lanes.</li>
-      <li><b>Spawn-template workflow</b> — Toolbar spawn now uses a dedicated template (set via row eyedropper), while per-row spawn creates shifted copies of that row.</li>
-      <li><b>Oscilloscope tool</b> — Added a togglable scope with trigger modes for zero-crossing, first-note, or last-note reference.</li>
-      <li><b>Row editor live preview</b> — Row-setting changes now update the canvas immediately; Save confirms and Cancel fully restores the original row.</li>
-      <li><b>Preset UI fix</b> — Custom-partial preset buttons were restored in global and row sound editors while preserving horizontal a-max presets.</li>
+      <li><b>Expanded scope triggers</b> — Added positive and negative zero crossings plus lowest-note and highest-note chord triggers, while retaining the original trigger choices.</li>
+      <li><b>Stable 30-trace capture</b> — The scope measures trigger-event frequency, decimates frequent events to about 30 traces per second, and uses an overdamped phase lock to center a trigger without jittery view jumps.</li>
+      <li><b>Analog persistence</b> — Adjustable phosphor decay blends successive captures for a controllable afterglow.</li>
+      <li><b>Crossing hysteresis</b> — A dedicated zero-crossing hysteresis control suppresses noisy trigger chatter.</li>
+      <li><b>Dedicated scope settings</b> — Oscilloscope controls now live in their own settings section and help topic.</li>
     </ul>
     <div class="mhelp" style="margin-left:18px">This latest release note is shown once for each ScaleLab version.</div>
     <section class="releaseHistory"><h3>Earlier versions</h3>
@@ -3221,25 +3344,12 @@ function openGlobalModal(){
     </div></div>
     <div class="mhelp">sound settings apply live (no Save needed)</div>
   </section>
-  <section class="msec"><h3 class="msecT">Scope, spectrum &amp; guides</h3>
+  <section class="msec"><h3 class="msecT">Spectrum &amp; guides</h3>
     <div class="frow"><label>Spectrum</label><input type="checkbox" id="mFft"${settings.fftOn?' checked':''}>
       <span style="font-size:.75rem;color:#aab;flex:none">FFT</span>
       <select id="mFftSz" style="flex:none">
         ${[2048,4096,8192,16384,32768].map(n=>`<option value="${n}"${settings.fftSize===n?' selected':''}>${n}</option>`).join('')}
       </select></div>
-    <div class="frow"><label>Oscilloscope</label><input type="checkbox" id="mOsc"${settings.oscOn?' checked':''}>
-      <select id="mOscTrig" style="flex:1">
-        <option value="zero"${settings.oscTrigger==='zero'?' selected':''}>trigger: zero crossing</option>
-        <option value="first"${settings.oscTrigger==='first'?' selected':''}>trigger: first note in chord</option>
-        <option value="last"${settings.oscTrigger==='last'?' selected':''}>trigger: last note in chord</option>
-      </select></div>
-    <div class="frow"><label>Scope time base</label><select id="mOscTime" style="flex:1">
-        <option value="fixed"${settings.oscTimeMode==='fixed'?' selected':''}>Fixed milliseconds</option>
-        <option value="frequency"${settings.oscTimeMode==='frequency'?' selected':''}>Dynamic — first/last triggered frequency</option>
-      </select></div>
-    <div class="frow"><label>Fixed time</label><input type="number" id="mOscMs" min="0.5" max="10000" step="0.5" value="${settings.oscMs}" style="flex:none;width:74px"><span style="font-size:.72rem;color:#9aa8c2">ms across display</span></div>
-    <div class="frow"><label>Periods</label><input type="number" id="mOscPeriods" min="1" max="30" step="1" value="${settings.oscPeriods}" style="flex:none;width:74px"><span style="font-size:.72rem;color:#9aa8c2">periods when dynamic</span></div>
-    <div class="frow"><label>Amplitude</label><input type="checkbox" id="mOscAuto"${settings.oscAutoAmp?' checked':''}><span style="font-size:.72rem;color:#9aa8c2">auto-scale to peak</span></div>
     <div class="frow"><label>Freq cursor</label><input type="checkbox" id="mCur"${settings.cursor?' checked':''}>
       <span style="font-size:.75rem;color:#aab;flex:none">+ partials</span>
       <input type="checkbox" id="mCurH"${settings.cursorHarm?' checked':''}></div>
@@ -3251,6 +3361,28 @@ function openGlobalModal(){
     <div class="frow"><label>Cents digits</label><select id="mCD" style="flex:1">
         ${[0,1,2,3].map(n=>`<option value="${n}"${CD()===n?' selected':''}>${n} digit${n===1?'':'s'} (e.g. 12${n>0?'.'+'3'.repeat(n):''}¢)</option>`).join('')}
       </select></div>
+  </section>
+  <section class="msec"><h3 class="msecT">Oscilloscope</h3>
+    <div class="frow"><label>Show scope</label><input type="checkbox" id="mOsc"${settings.oscOn?' checked':''}></div>
+    <div class="frow"><label>Trigger</label><select id="mOscTrig" style="flex:1">
+        <option value="zero"${settings.oscTrigger==='zero'?' selected':''}>Zero crossing (rising, legacy)</option>
+        <option value="positive"${settings.oscTrigger==='positive'?' selected':''}>Positive zero crossing</option>
+        <option value="negative"${settings.oscTrigger==='negative'?' selected':''}>Negative zero crossing</option>
+        <option value="first"${settings.oscTrigger==='first'?' selected':''}>First note in chord</option>
+        <option value="last"${settings.oscTrigger==='last'?' selected':''}>Last note in chord</option>
+        <option value="lowest"${settings.oscTrigger==='lowest'?' selected':''}>Lowest note in chord</option>
+        <option value="highest"${settings.oscTrigger==='highest'?' selected':''}>Highest note in chord</option>
+      </select></div>
+    <div class="frow"><label>Time base</label><select id="mOscTime" style="flex:1">
+        <option value="fixed"${settings.oscTimeMode==='fixed'?' selected':''}>Fixed milliseconds</option>
+        <option value="frequency"${settings.oscTimeMode==='frequency'?' selected':''}>Dynamic — measured trigger frequency</option>
+      </select></div>
+    <div class="frow"><label>Fixed time</label><input type="number" id="mOscMs" min="0.5" max="10000" step="0.5" value="${settings.oscMs}" style="flex:none;width:74px"><span style="font-size:.72rem;color:#9aa8c2">ms across display</span></div>
+    <div class="frow"><label>Periods</label><input type="number" id="mOscPeriods" min="1" max="30" step="1" value="${settings.oscPeriods}" style="flex:none;width:74px"><span style="font-size:.72rem;color:#9aa8c2">when dynamic</span></div>
+    <div class="frow"><label>Hysteresis</label><input type="range" id="mOscHyst" min="0" max="10" step="0.1" value="${Math.round((settings.oscHysteresis??0.02)*1000)/10}" style="flex:1"><output id="mOscHystV" style="width:42px">${((settings.oscHysteresis??0.02)*100).toFixed(1)}%</output></div>
+    <div class="frow"><label>Phosphor decay</label><input type="range" id="mOscDecay" min="0" max="100" step="1" value="${Math.round((settings.oscPhosphorDecay??0.6)*100)}" style="flex:1"><output id="mOscDecayV" style="width:42px">${Math.round((settings.oscPhosphorDecay??0.6)*100)}%</output></div>
+    <div class="frow"><label>Auto amplitude</label><input type="checkbox" id="mOscAuto"${settings.oscAutoAmp?' checked':''}><span style="font-size:.72rem;color:#9aa8c2">scale to peak</span></div>
+    <div class="mhelp">Trigger captures are phase-locked and kept near 30 traces/second. Crossing frequency is measured from the audio; note modes use the selected note frequency.</div>
   </section>
   <section class="msec"><h3 class="msecT">MIDI</h3>
     <div class="frow"><label>MIDI out</label><button id="mMidi" style="flex:none">${midi.enabled?'Disconnect':'Connect…'}</button>
@@ -3313,11 +3445,14 @@ function openGlobalModal(){
     settings.oscOn=e.target.checked;
     document.getElementById('oscBtn').classList.toggle('toggledOn',settings.oscOn);
     document.getElementById('oscScope').style.display=settings.oscOn?'block':'none';
+    resetOscilloscope();
   };
-  $('mOscTrig').onchange=e=>{ settings.oscTrigger=e.target.value; };
-  $('mOscTime').onchange=e=>{ settings.oscTimeMode=e.target.value; };
-  $('mOscMs').oninput=e=>{ settings.oscMs=Math.max(.5,Math.min(10000,+e.target.value||20)); };
-  $('mOscPeriods').oninput=e=>{ settings.oscPeriods=Math.max(1,Math.min(30,Math.round(+e.target.value||7))); };
+  $('mOscTrig').onchange=e=>{ settings.oscTrigger=e.target.value; resetOscilloscope(); };
+  $('mOscTime').onchange=e=>{ settings.oscTimeMode=e.target.value; resetOscilloscope(); };
+  $('mOscMs').oninput=e=>{ settings.oscMs=Math.max(.5,Math.min(10000,+e.target.value||20)); resetOscilloscope(); };
+  $('mOscPeriods').oninput=e=>{ settings.oscPeriods=Math.max(1,Math.min(30,Math.round(+e.target.value||7))); resetOscilloscope(); };
+  $('mOscHyst').oninput=e=>{ settings.oscHysteresis=+e.target.value/100; $('mOscHystV').textContent=e.target.value+'%'; resetOscilloscope(); };
+  $('mOscDecay').oninput=e=>{ settings.oscPhosphorDecay=+e.target.value/100; $('mOscDecayV').textContent=e.target.value+'%'; };
   $('mOscAuto').onchange=e=>{ settings.oscAutoAmp=e.target.checked; };
   $('mCur').onchange=e=>{ settings.cursor=e.target.checked; drawAll(); };
   $('mCurH').onchange=e=>{ settings.cursorHarm=e.target.checked; drawAll(); };
