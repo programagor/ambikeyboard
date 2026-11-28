@@ -228,7 +228,7 @@ const LOGO=`<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke-w
 const settings = { A4: 440, grid: true, padLabels: true, vBias: 0.5,
   fftOn: true, fftSize: 16384, cursor: true, cursorHarm: true,
   haloOn: true, haloCents: 50, centDigits: 1, slidersHidden: false,
-  oscOn: false, oscTrigger: 'zero', oscTimeMode: 'fixed', oscMs: 20, oscPeriods: 7,
+  chordArcsOn: true, oscOn: false, oscTrigger: 'first', oscTimeMode: 'frequency', oscMs: 20, oscPeriods: 8,
   oscAutoAmp: true };
 function defaultParts(){ return [1,2,3,4,5,6,7,8].map(n=>({r:n,g:+(1/n).toFixed(3),d:0})); }
 const synth = { wave:'triangle', a:0.01, d:0.12, s:0.7, r:0.3, vol:0.6, partials:defaultParts() };
@@ -1757,7 +1757,7 @@ function drawView(v){
       }
     }
   }
-  drawChordIntervals(v);
+  if(settings.chordArcsOn!==false) drawChordIntervals(v);
   const drawn=new Uint8Array(v.pts.length);
   if(v.hasMulti){
     for(const members of v.grpMembers.values()){
@@ -1817,11 +1817,17 @@ function drawRulerStrip(v){
   if(settings.fftOn&&analyser&&fftData&&actx){
     const sr=actx.sampleRate, binHz=sr/analyser.fftSize;
     const span=v.xMax-v.xMin;
+    const binMax=fftData.length-1;
     ctx.beginPath(); ctx.moveTo(0,rulerH);
-    for(let x=0;x<=W;x+=2){
-      const f=Math.pow(2,v.xMin+span*x/W);
-      const i=Math.min(fftData.length-1,Math.max(0,Math.round(f/binHz)));
-      const db=fftData[i];
+    for(let x=0;x<=W;x++){
+      const xl=Math.max(0,x-0.5), xr=Math.min(W,x+0.5);
+      const fLo=Math.pow(2,v.xMin+span*xl/W);
+      const fHi=Math.pow(2,v.xMin+span*xr/W);
+      let i0=Math.max(0,Math.min(binMax,Math.floor(fLo/binHz)));
+      let i1=Math.max(0,Math.min(binMax,Math.ceil(fHi/binHz)));
+      if(i1<i0){ const t=i0; i0=i1; i1=t; }
+      let db=-160;
+      for(let i=i0;i<=i1;i++) if(fftData[i]>db) db=fftData[i];
       const val=Math.max(0,Math.min(1,(db+92)/62));
       ctx.lineTo(x,rulerH-1-val*(rulerH-4));
     }
@@ -2571,7 +2577,7 @@ function openHelpModal(){
    ['Row settings','links','Links & repetition','<h3>Links &amp; repetition</h3><p>Rows can reference another row ID or a group in f₀. The result is the referenced row’s/group’s last-played pitch, so muted controller rows can retune an entire instrument.</p><p>Group names are comma-separated memberships. Group references work across tabs. Renaming a row updates expressions and bindings; deleting a row substitutes its f₀ expression where possible. Explicit-ratio rows have a separate octave repeat control, so repeated scale copies need not be typed manually.</p>'],
    ['Row settings','rowsound','Per-row sound','<h3>Per-row sound</h3><p>By default a row inherits the global synthesizer. Enabling Custom sound supplies a waveform and ADSR envelope for that row.</p><p>The custom-partial editor creates additive sine components at arbitrary ratios to f₀. Each partial has gain and an optional decay: ratios can be integer harmonics or irrational numbers for bell/rod-like spectra. Saw, square, triangle, bell, rod, and other presets provide starting points.</p>'],
    ['Global settings','tuning','Tuning & synth','<h3>Tuning &amp; global synth</h3><h4>A4 reference</h4><p>A4 sets the absolute conversion for note names, 12-TET annotations, and frequency labels. Changing it retunes note-name expressions without changing ratio-only arithmetic.</p><h4>Default sound</h4><p>Wave, partials, volume, and ADSR provide the inherited instrument for rows without overrides. Attack/decay/release are seconds/ms controls; sustain is a percentage level. Custom partial ratios and decays are per-component, not forced to integer harmonics.</p>'],
-   ['Global settings','visual','Spectrum & guides','<h3>Spectrum &amp; guides</h3><p>The FFT is drawn behind the 12-TET ruler using the active view’s logarithmic frequency range. Larger FFT sizes give better low-frequency precision but update more slowly.</p><ul><li><b>Freq cursor:</b> a vertical line at every sounding fundamental.</li><li><b>Partials:</b> optional differently coloured lines for the actual sounding partials.</li><li><b>Halo:</b> shows nearby pad frequencies out to a cents radius, separately from exact matches.</li><li><b>Voronoi bias:</b> changes the importance of vertical vs horizontal distance when partitioning pads.</li><li><b>Oscilloscope:</b> togglable scope with zero-crossing, first-note, and last-note triggers.</li><li><b>Cents digits:</b> controls display precision; entering c or ¢ works in fields.</li></ul>'],
+   ['Global settings','visual','Spectrum & guides','<h3>Spectrum &amp; guides</h3><p>The FFT is drawn behind the 12-TET ruler using the active view’s logarithmic frequency range. Larger FFT sizes give better low-frequency precision but update more slowly.</p><ul><li><b>Freq cursor:</b> a vertical line at every sounding fundamental.</li><li><b>Partials:</b> optional differently coloured lines for the actual sounding partials.</li><li><b>Chord arcs:</b> show/hide interval overlays for active chords.</li><li><b>Halo:</b> shows nearby pad frequencies out to a cents radius, separately from exact matches.</li><li><b>Voronoi bias:</b> changes the importance of vertical vs horizontal distance when partitioning pads.</li><li><b>Oscilloscope:</b> togglable scope with zero-crossing, first-note, and last-note triggers.</li><li><b>Cents digits:</b> controls display precision; entering c or ¢ works in fields.</li></ul>'],
    ['Global settings','midiout','MIDI output','<h3>MIDI output</h3><p>MIDI pitch is nominally 12-TET, and pitch bend is a <em>channel-wide</em> controller. If two simultaneous notes use different microtonal bends, one shared channel would move both notes. MPE mode therefore allocates a fresh channel to each live note (channels 2–16), so every note can carry its own note number and bend.</p><p><b>Bend range</b> must match the receiving synth’s range. Larger ranges permit wider microtonal and glissando excursions, but reduce bend resolution. If the receiver has only conventional monophonic MIDI, use Monophonic mode and choose the hardware’s listening channel; notes are legato and bend is shared, as a last-resort approximation.</p>'],
    ['Global settings','midiin','MIDI input & bindings','<h3>MIDI input &amp; bindings</h3><p>Choose an input and an incoming channel (or Omni). In Assign mode, select a pad and play a MIDI key to bind that note exactly like a computer letter. A normal binding follows the target row as it retunes; Shift makes it fixed frequency.</p><p>This supports controller workflows: bind a MIDI note to a muted root pad, reference that pad from another row, then bind a second register of notes to pads on the follower row. The first note silently retunes the follower, while the others perform on it.</p><p>MIDI input bindings and MIDI output targets are independent choices, so the same hardware can be used for input, output, or split roles on different channels.</p>'],
    ['Global settings','other','Bindings & workspace','<h3>Bindings &amp; workspace</h3><p>The Bindings manager lists keyboard and MIDI bindings. Follow bindings store the target row and multiplier; fixed bindings store an absolute frequency and pin it to the ruler.</p><p>Workspace export/import carries settings, rows, tabs, views, bindings, and synth state. The Voronoi, spectrum, and interface settings are part of the workspace rather than the synthesis engine itself.</p>']
@@ -3219,6 +3225,8 @@ function openGlobalModal(){
   <div class="frow"><label>Freq cursor</label><input type="checkbox" id="mCur"${settings.cursor?' checked':''}>
     <span style="font-size:.75rem;color:#aab;flex:none">+ partials</span>
     <input type="checkbox" id="mCurH"${settings.cursorHarm?' checked':''}></div>
+  <div class="frow"><label>Chord arcs</label><input type="checkbox" id="mArc"${settings.chordArcsOn!==false?' checked':''}>
+    <span style="font-size:.75rem;color:#aab;flex:none">interval overlays</span></div>
   <div class="frow"><label>Halo</label><input type="checkbox" id="mHalo"${settings.haloOn?' checked':''}>
     <span style="font-size:.75rem;color:#aab;flex:none">range ¢</span>
     <input type="number" id="mHaloC" min="1" max="600" value="${settings.haloCents||50}" style="width:64px;flex:none"></div>
@@ -3290,6 +3298,7 @@ function openGlobalModal(){
   $('mOscAuto').onchange=e=>{ settings.oscAutoAmp=e.target.checked; };
   $('mCur').onchange=e=>{ settings.cursor=e.target.checked; drawAll(); };
   $('mCurH').onchange=e=>{ settings.cursorHarm=e.target.checked; drawAll(); };
+  $('mArc').onchange=e=>{ settings.chordArcsOn=e.target.checked; drawAll(); };
   $('mHalo').onchange=e=>{ settings.haloOn=e.target.checked; drawAll(); };
   $('mHaloC').onchange=e=>{ settings.haloCents=Math.max(1,Math.min(600,+e.target.value||50)); drawAll(); };
   $('mCD').onchange=e=>{ settings.centDigits=+e.target.value; rebuild(); };
