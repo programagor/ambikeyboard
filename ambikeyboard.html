@@ -1582,44 +1582,34 @@ function drawPadLabel(v,polys,p,chars){
   ctx.restore();
   return {ax,ay,labelRect};
 }
-function drawMergedRunChars(v,run,avoidRect){
-  const byKey=new Map();
+function drawMergedRunChars(v,run,polys,compositeAnchor,avoidRect){
+  const chars=[];
+  let dim=false;
   for(const m of run){
     const key=v.pts[m].key;
-    if(!padChar.get(key)?.length) continue;
-    if(!byKey.has(key)) byKey.set(key,[]);
-    byKey.get(key).push(m);
+    const labels=padChar.get(key)||[];
+    for(const c of labels) if(!chars.includes(c)) chars.push(c);
+    dim=dim||!!v.pts[m].row.mute;
   }
-  for(const [key,members] of byKey){
-    const chars=padChar.get(key); if(!chars||!chars.length) continue;
-    let pick=null;
-    for(const m of members){
-      const poly=v.fills[m]; if(!poly||poly.length<3) continue;
-      let A2=0,cx2=0,cy2=0;
-      for(let k=0;k<poly.length;k++){
-        const a=poly[k], b=poly[(k+1)%poly.length];
-        const w=a.x*b.y-b.x*a.y;
-        A2+=w; cx2+=(a.x+b.x)*w; cy2+=(a.y+b.y)*w;
-      }
-      if(Math.abs(A2)<60) continue;
-      const ax=cx2/(3*A2), ay=cy2/(3*A2);
-      let anchor=chooseTextAnchor([poly],ax,ay,avoidRect);
-      if(!anchor&&avoidRect) anchor=chooseTextAnchor([poly],ax,ay,null);
-      if(!anchor) continue;
-      const score=(anchor.edge||0)-(anchor.dist||0)*0.1;
-      if(!pick||score>pick.score) pick={m,anchor,score,poly};
-    }
-    if(!pick) continue;
-    const {m,anchor,poly}=pick;
-    const dim=v.pts[m].row.mute;
-    const ctx=v.ctx;
-    ctx.save();
-    polyPath(ctx,poly); ctx.clip();
-    ctx.font='bold 9px monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillStyle=dim?'rgba(255,255,255,.55)':'rgba(10,10,20,.85)';
-    ctx.fillText(chars.join(''),anchor.x,anchor.y);
-    ctx.restore();
+  if(!chars.length||!compositeAnchor) return;
+  let anchor=chooseTextAnchor(polys,compositeAnchor.x,compositeAnchor.y,avoidRect);
+  if(!anchor&&avoidRect){
+    anchor=chooseTextAnchor(polys,compositeAnchor.x,compositeAnchor.y,null);
   }
+  if(!anchor) return;
+  const ctx=v.ctx;
+  ctx.save();
+  ctx.beginPath();
+  for(const poly of polys){
+    ctx.moveTo(poly[0].x,poly[0].y);
+    for(let k=1;k<poly.length;k++) ctx.lineTo(poly[k].x,poly[k].y);
+    ctx.closePath();
+  }
+  ctx.clip();
+  ctx.font='bold 9px monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle=dim?'rgba(255,255,255,.55)':'rgba(10,10,20,.85)';
+  ctx.fillText(chars.join(''),anchor.x,anchor.y);
+  ctx.restore();
 }
 function drawRulerPin(v,x,char,color,dashed){
   const ctx=v.ctx;
@@ -1859,8 +1849,10 @@ function drawView(v){
           const run=arr.slice(s,k); s=k;
           if(run.length<2) continue;
           const p0=v.pts[run[0]];
-          const meta=drawPadLabel(v,run.map(m=>v.fills[m]),p0,null);
-          drawMergedRunChars(v,run,meta?.labelRect||null);
+          const runPolys=run.map(m=>v.fills[m]);
+          const meta=drawPadLabel(v,runPolys,p0,null);
+          drawMergedRunChars(v,run,runPolys,
+            meta?{x:meta.ax,y:meta.ay}:null,meta?.labelRect||null);
           for(const m of run) drawn[m]=1;
         }
       }
