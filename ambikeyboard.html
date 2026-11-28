@@ -1477,9 +1477,7 @@ function chooseTextAnchor(polys,ax,ay,avoidRect){
     [ax+16,ay+10],[ax-16,ay+10],[ax+16,ay-10],[ax-16,ay-10]
   ];
   let best=null, bestScore=Infinity;
-  const blocked=(x,y)=>avoidRect&&
-    x+8>=avoidRect.x0&&x-8<=avoidRect.x1&&
-    y+5>=avoidRect.y0&&y-5<=avoidRect.y1;
+  const blocked=(x,y)=>avoidRect&&x>=avoidRect.x0&&x<=avoidRect.x1&&y>=avoidRect.y0&&y<=avoidRect.y1;
   for(const [x,y] of candidates){
     if(blocked(x,y)) continue;
     let ok=false, edge=0;
@@ -1565,25 +1563,16 @@ function drawPadLabel(v,polys,p,chars){
       ctx.font='8.5px system-ui'; ctx.fillStyle=dim?'rgba(220,220,230,.35)':'rgba(15,15,28,.6)';
       ctx.fillText(p.nn,ax,ay);
       ctx.fillStyle=dim?'rgba(220,220,230,.3)':'rgba(15,15,28,.45)';
-      const hz=fmtHz(p.f); ctx.fillText(hz,ax,ay+9);
-      ctx.font='600 11px system-ui';
-      const widths=[ctx.measureText(p.label).width];
-      ctx.font='8.5px system-ui';
-      widths.push(ctx.measureText(p.nn).width,ctx.measureText(hz).width);
-      const rw=Math.max(22,Math.ceil(Math.max(...widths)/2)+4);
-      labelRect={x0:ax-rw,x1:ax+rw,y0:ay-17,y1:ay+16};
+      ctx.fillText(fmtHz(p.f),ax,ay+9);
+      labelRect={x0:ax-40,x1:ax+40,y0:ay-16,y1:ay+15};
     } else if(bh>34){
       ctx.font='600 11px system-ui'; ctx.fillText(p.label,ax,ay-6);
       ctx.font='8.5px system-ui'; ctx.fillStyle=dim?'rgba(220,220,230,.35)':'rgba(15,15,28,.6)';
-      const nn=p.nn; ctx.fillText(nn,ax,ay+6);
-      const labelW=ctx.measureText(p.label).width;
-      const nnW=ctx.measureText(nn).width;
-      const rw=Math.max(22,Math.ceil(Math.max(labelW,nnW)/2)+4);
-      labelRect={x0:ax-rw,x1:ax+rw,y0:ay-13,y1:ay+13};
+      ctx.fillText(p.nn,ax,ay+6);
+      labelRect={x0:ax-36,x1:ax+36,y0:ay-12,y1:ay+12};
     } else {
       ctx.font='600 11px system-ui'; ctx.fillText(p.label,ax,ay);
-      const rw=Math.max(16,Math.ceil(ctx.measureText(p.label).width/2)+4);
-      labelRect={x0:ax-rw,x1:ax+rw,y0:ay-9,y1:ay+9};
+      labelRect={x0:ax-32,x1:ax+32,y0:ay-9,y1:ay+9};
     }
   }
   if(showChars){
