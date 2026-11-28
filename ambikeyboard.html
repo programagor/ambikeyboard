@@ -1535,9 +1535,17 @@ function drawPadLabel(v,polys,p,chars){
     }
   }
   if(showChars){
+    if(showLbl&&bh<40) showChars=false;
+  }
+  if(showChars){
     ctx.font='bold 9px monospace';
     ctx.fillStyle=dim?'rgba(255,255,255,.55)':'rgba(10,10,20,.85)';
-    const offY=showLbl?(bh>46?ay-20:bh>34?ay-14:ay-9):ay;
+    let offY=ay;
+    if(showLbl){
+      offY=bh>52?(y0+8):(y1-8);
+      if(offY<y0+8) offY=y0+8;
+      if(offY>y1-8) offY=y1-8;
+    }
     ctx.fillText(chars.join(''),ax,offY);
   }
   ctx.restore();
@@ -1780,7 +1788,12 @@ function drawView(v){
           const run=arr.slice(s,k); s=k;
           if(run.length<2) continue;
           const p0=v.pts[run[0]];
-          drawPadLabel(v,run.map(m=>v.fills[m]),p0,null);
+          const runChars=[];
+          for(const m of run){
+            const chars=padChar.get(v.pts[m].key)||[];
+            for(const c of chars) if(!runChars.includes(c)) runChars.push(c);
+          }
+          drawPadLabel(v,run.map(m=>v.fills[m]),p0,runChars.length?runChars:null);
           for(const m of run) drawn[m]=1;
         }
       }
@@ -1790,7 +1803,6 @@ function drawView(v){
     if(drawn[i]) continue;
     drawPadLabel(v,[v.fills[i]],v.pts[i],padChar.get(v.pts[i].key));
   }
-  if(v.hasMulti) for(let i=0;i<v.pts.length;i++){ if(drawn[i]) drawPadChars(v,i); }
   ctx.strokeStyle='rgba(255,255,255,.07)'; ctx.lineWidth=1;
   v.rows.forEach((r,i)=>{ const y=v.ltops[i]+r.height;
     if(y>rh&&y<H){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); } });
@@ -1883,6 +1895,13 @@ const SCOPE_GAIN_ALPHA=0.18;
 const SCOPE_AUTO_GAIN_FLOOR_PEAK=0.015;
 const SCOPE_AUTO_GAIN_MIN=0.25;
 const SCOPE_AUTO_GAIN_MAX=6;
+const SCOPE_GRID_TIERS=[
+  {step:0.5,alpha:0.24},
+  {step:0.25,alpha:0.18},
+  {step:0.125,alpha:0.13},
+  {step:0.0625,alpha:0.1},
+  {step:0.03125,alpha:0.08}
+];
 const oscCaptureClock={
   interval:null, divider:1, due:null, lastCapture:null, lastTime:null, phaseError:0,
   triggerFrequency:null, captureFrequency:null, amplitudeScale:1
@@ -2074,12 +2093,23 @@ function drawOscilloscope(){
   ctx.fillStyle='rgba(7,10,15,.92)';
   ctx.fillRect(0,0,w,h);
   const displayAmpScale=Math.max(.05,Math.min(12,oscCaptureClock.amplitudeScale||1));
-  ctx.strokeStyle='rgba(80,95,120,.22)';
-  ctx.lineWidth=1;
-  for(const level of [-0.5,-0.25,0.25,0.5]){
-    const y=h*(.5-level*displayAmpScale);
-    if(y>0&&y<h){
-      ctx.beginPath(); ctx.moveTo(0,y+.5); ctx.lineTo(w,y+.5); ctx.stroke();
+  const visibleHalfAmp=.5/displayAmpScale;
+  const usedY=new Set();
+  for(const tier of SCOPE_GRID_TIERS){
+    const step=tier.step;
+    if(h*step*displayAmpScale<3) continue;
+    const maxN=Math.min(128,Math.floor(visibleHalfAmp/step));
+    if(maxN<1) continue;
+    ctx.strokeStyle='rgba(80,95,120,'+tier.alpha+')';
+    ctx.lineWidth=1;
+    for(let n=1;n<=maxN;n++){
+      const level=n*step;
+      for(const s of [-1,1]){
+        const y=Math.round(h*(.5-s*level*displayAmpScale));
+        if(y<=0||y>=h||usedY.has(y)) continue;
+        usedY.add(y);
+        ctx.beginPath(); ctx.moveTo(0,y+.5); ctx.lineTo(w,y+.5); ctx.stroke();
+      }
     }
   }
   ctx.strokeStyle='rgba(80,95,120,.55)';
