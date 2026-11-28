@@ -1486,8 +1486,9 @@ function chooseTextAnchor(polys,ax,ay,avoidRect){
       ok=true; edge=Math.max(edge,dmin);
     }
     if(!ok) continue;
-    const score=Math.hypot(x-ax,y-ay)-Math.min(edge,18)*0.12;
-    if(score<bestScore){ bestScore=score; best={x,y}; }
+    const dist=Math.hypot(x-ax,y-ay);
+    const score=dist-Math.min(edge,18)*0.12;
+    if(score<bestScore){ bestScore=score; best={x,y,edge,dist}; }
   }
   return best;
 }
@@ -1574,7 +1575,8 @@ function drawPadLabel(v,polys,p,chars){
   if(showChars){
     ctx.font='bold 9px monospace';
     ctx.fillStyle=dim?'rgba(255,255,255,.55)':'rgba(10,10,20,.85)';
-    const anchor=chooseTextAnchor(polys,ax,ay,labelRect);
+    let anchor=chooseTextAnchor(polys,ax,ay,labelRect);
+    if(!anchor&&labelRect) anchor=chooseTextAnchor(polys,ax,ay,null);
     if(anchor) ctx.fillText(chars.join(''),anchor.x,anchor.y);
   }
   ctx.restore();
@@ -1585,21 +1587,30 @@ function drawMergedRunChars(v,run,avoidRect){
   for(const m of run){
     const key=v.pts[m].key;
     if(!padChar.get(key)?.length) continue;
-    if(!byKey.has(key)) byKey.set(key,m);
+    if(!byKey.has(key)) byKey.set(key,[]);
+    byKey.get(key).push(m);
   }
-  for(const [key,m] of byKey){
-    const poly=v.fills[m]; if(!poly||poly.length<3) continue;
+  for(const [key,members] of byKey){
     const chars=padChar.get(key); if(!chars||!chars.length) continue;
-    let A2=0,cx2=0,cy2=0;
-    for(let k=0;k<poly.length;k++){
-      const a=poly[k], b=poly[(k+1)%poly.length];
-      const w=a.x*b.y-b.x*a.y;
-      A2+=w; cx2+=(a.x+b.x)*w; cy2+=(a.y+b.y)*w;
+    let pick=null;
+    for(const m of members){
+      const poly=v.fills[m]; if(!poly||poly.length<3) continue;
+      let A2=0,cx2=0,cy2=0;
+      for(let k=0;k<poly.length;k++){
+        const a=poly[k], b=poly[(k+1)%poly.length];
+        const w=a.x*b.y-b.x*a.y;
+        A2+=w; cx2+=(a.x+b.x)*w; cy2+=(a.y+b.y)*w;
+      }
+      if(Math.abs(A2)<60) continue;
+      const ax=cx2/(3*A2), ay=cy2/(3*A2);
+      let anchor=chooseTextAnchor([poly],ax,ay,avoidRect);
+      if(!anchor&&avoidRect) anchor=chooseTextAnchor([poly],ax,ay,null);
+      if(!anchor) continue;
+      const score=(anchor.edge||0)-(anchor.dist||0)*0.1;
+      if(!pick||score>pick.score) pick={m,anchor,score,poly};
     }
-    if(Math.abs(A2)<60) continue;
-    const ax=cx2/(3*A2), ay=cy2/(3*A2);
-    const anchor=chooseTextAnchor([poly],ax,ay,avoidRect);
-    if(!anchor) continue;
+    if(!pick) continue;
+    const {m,anchor,poly}=pick;
     const dim=v.pts[m].row.mute;
     const ctx=v.ctx;
     ctx.save();
