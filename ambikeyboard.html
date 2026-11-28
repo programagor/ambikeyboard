@@ -1594,6 +1594,32 @@ function drawMergedRunChars(v,run,compositeAnchor,avoidRect){
     const chars=padChar.get(key)||[];
     if(!chars.length) continue;
 
+    if(v.pts[m].row.type!=='cloud'){
+      const poly=v.cells[m];
+      if(!poly||poly.length<3) continue;
+      let A=0,cx=0,cy=0;
+      for(let k=0;k<poly.length;k++){
+        const a=poly[k], b=poly[(k+1)%poly.length];
+        const w=a.x*b.y-b.x*a.y;
+        A+=w; cx+=(a.x+b.x)*w; cy+=(a.y+b.y)*w;
+      }
+      if(Math.abs(A)<180) continue;
+      const ax=cx/(3*A), ay=cy/(3*A);
+      let anchor=chooseTextAnchor([poly],ax,ay,avoidRect);
+      if(!anchor&&avoidRect) anchor=chooseTextAnchor([poly],ax,ay,null);
+      if(!anchor) continue;
+
+      const dim=!!v.pts[m].row.mute;
+      const ctx=v.ctx;
+      ctx.save();
+      polyPath(ctx,poly); ctx.clip();
+      ctx.font='bold 9px monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle=dim?'rgba(255,255,255,.55)':'rgba(10,10,20,.85)';
+      ctx.fillText(chars.join(''),anchor.x,anchor.y);
+      ctx.restore();
+      continue;
+    }
+
     const gi=v.grp[m];
     const members=v.grpMembers.get(gi)||[m];
     const polys=members.map(i=>v.fills[i]).filter(poly=>poly&&poly.length>=3);
