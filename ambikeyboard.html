@@ -1635,7 +1635,9 @@ function drawMergedRunChars(v,run,compositeAnchor,avoidRect){
       }
     }
     if(Math.abs(A)<180) continue;
-    const ax=cx/(3*A), ay=cy/(3*A);
+    const exactAx=cx/(3*A), exactAy=cy/(3*A);
+    const ax=compositeAnchor?compositeAnchor.x:exactAx;
+    const ay=compositeAnchor?compositeAnchor.y:exactAy;
 
     let rect=avoidRect;
     let anchor=chooseTextAnchor(polys,ax,ay,rect);
