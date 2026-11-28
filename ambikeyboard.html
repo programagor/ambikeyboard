@@ -1542,9 +1542,16 @@ function drawPadLabel(v,polys,p,chars){
     ctx.fillStyle=dim?'rgba(255,255,255,.55)':'rgba(10,10,20,.85)';
     let offY=ay;
     if(showLbl){
-      offY=bh>52?(y0+8):(y1-8);
-      if(offY<y0+8) offY=y0+8;
-      if(offY>y1-8) offY=y1-8;
+      let lo=ay-6, hi=ay+6;
+      if(bh>46){ lo=ay-14; hi=ay+13; }
+      else if(bh>34){ lo=ay-10; hi=ay+10; }
+      const candidates=[ay+12,ay-12,ay+18,ay-18,ay+24,ay-24,ay];
+      for(const cy of candidates){
+        if(cy<y0+8||cy>y1-8) continue;
+        if(cy>=lo&&cy<=hi) continue;
+        offY=cy;
+        break;
+      }
     }
     ctx.fillText(chars.join(''),ax,offY);
   }
