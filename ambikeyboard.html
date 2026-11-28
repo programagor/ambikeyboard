@@ -1880,6 +1880,9 @@ const SCOPE_MAX_TRACES_PER_SECOND=30;
 const SCOPE_CLOCK_TAU=0.65;
 const SCOPE_PHASE_GAIN=0.12;
 const SCOPE_GAIN_ALPHA=0.18;
+const SCOPE_AUTO_GAIN_FLOOR_PEAK=0.015;
+const SCOPE_AUTO_GAIN_MIN=0.25;
+const SCOPE_AUTO_GAIN_MAX=6;
 const oscCaptureClock={
   interval:null, divider:1, due:null, lastCapture:null, lastTime:null, phaseError:0,
   triggerFrequency:null, captureFrequency:null, amplitudeScale:1
@@ -1979,6 +1982,17 @@ function updateScopeCaptureClock(clock,triggerFrequency,events,availableUntil,no
   clock.captureFrequency=1/clock.interval;
   return chosen;
 }
+function freeRunScopeCapture(clock,bufferStart,sampleRate,dataLength,availableUntil){
+  if(!(clock.interval>0)||clock.due==null||availableUntil<clock.due) return null;
+  while(clock.due+clock.interval<=availableUntil) clock.due+=clock.interval;
+  const t=clock.due;
+  clock.lastCapture=t;
+  clock.captureFrequency=1/clock.interval;
+  clock.due+=clock.interval;
+  const sample=Math.round((t-bufferStart)*sampleRate);
+  if(sample<0||sample>=dataLength) return null;
+  return {sample,time:t,freeRun:true};
+}
 function drawOscilloscope(){
   const cv=document.getElementById('oscScope');
   if(!cv) return;
@@ -2018,14 +2032,25 @@ function drawOscilloscope(){
   }
   const centerSamples=Math.ceil(win/2);
   const availableUntil=bufferEnd-centerSamples/actx.sampleRate;
-  const capture=triggerFrequency
+  const captureFromTrigger=triggerFrequency
     ? updateScopeCaptureClock(oscCaptureClock,triggerFrequency,events,availableUntil,bufferEnd)
     : null;
+  const capture=captureFromTrigger||freeRunScopeCapture(
+    oscCaptureClock,bufferStart,actx.sampleRate,data.length,availableUntil
+  );
   const traceCtx=oscPhosphorCanvas.getContext('2d');
   if(capture){
-    let peak=0, start=capture.sample-centerSamples;
-    for(let i=0;i<win;i++) peak=Math.max(peak,Math.abs(data[start+i]));
-    const targetScale=settings.oscAutoAmp&&peak>0.001?0.45/peak:1;
+    let peak=0;
+    const start=Math.max(0,Math.min(data.length-win-1,capture.sample-centerSamples));
+    const windowed=new Float32Array(win);
+    for(let i=0;i<win;i++){
+      const sample=data[start+i]??0;
+      windowed[i]=sample;
+      peak=Math.max(peak,Math.abs(sample));
+    }
+    const targetScale=settings.oscAutoAmp&&peak>SCOPE_AUTO_GAIN_FLOOR_PEAK
+      ? Math.max(SCOPE_AUTO_GAIN_MIN,Math.min(SCOPE_AUTO_GAIN_MAX,0.45/peak))
+      : 1;
     oscCaptureClock.amplitudeScale+=(targetScale-oscCaptureClock.amplitudeScale)*SCOPE_GAIN_ALPHA;
     const ampScale=oscCaptureClock.amplitudeScale;
     const decay=Math.max(0,Math.min(1,settings.oscPhosphorDecay??.6));
@@ -2039,7 +2064,7 @@ function drawOscilloscope(){
     traceCtx.beginPath();
     for(let i=0;i<win;i++){
       const x=i/(win-1)*w;
-      const y=h*(.5-data[start+i]*ampScale);
+      const y=h*(.5-windowed[i]*ampScale);
       if(i===0) traceCtx.moveTo(x,y); else traceCtx.lineTo(x,y);
     }
     traceCtx.stroke();
@@ -2048,6 +2073,15 @@ function drawOscilloscope(){
   ctx.clearRect(0,0,w,h);
   ctx.fillStyle='rgba(7,10,15,.92)';
   ctx.fillRect(0,0,w,h);
+  const displayAmpScale=Math.max(.05,Math.min(12,oscCaptureClock.amplitudeScale||1));
+  ctx.strokeStyle='rgba(80,95,120,.22)';
+  ctx.lineWidth=1;
+  for(const level of [-0.5,-0.25,0.25,0.5]){
+    const y=h*(.5-level*displayAmpScale);
+    if(y>0&&y<h){
+      ctx.beginPath(); ctx.moveTo(0,y+.5); ctx.lineTo(w,y+.5); ctx.stroke();
+    }
+  }
   ctx.strokeStyle='rgba(80,95,120,.55)';
   ctx.lineWidth=1;
   ctx.beginPath(); ctx.moveTo(0,h/2+.5); ctx.lineTo(w,h/2+.5); ctx.stroke();
@@ -2060,7 +2094,9 @@ function drawOscilloscope(){
     last:'last note',lowest:'lowest note',highest:'highest note'};
   const triggerHz=triggerFrequency?fmtHz(triggerFrequency)+' Hz':'--';
   const captureHz=oscCaptureClock.captureFrequency?oscCaptureClock.captureFrequency.toFixed(1)+' tr/s':'--';
-  ctx.fillText((labels[settings.oscTrigger]||'scope')+' · '+triggerHz+' · '+captureHz,8,10);
+  const mode=captureFromTrigger?'lock':'free';
+  const gain='g×'+displayAmpScale.toFixed(2);
+  ctx.fillText((labels[settings.oscTrigger]||'scope')+' · '+triggerHz+' · '+captureHz+' · '+gain+' · '+mode,8,10);
 }
 function fftLoop(){
   requestAnimationFrame(fftLoop);
